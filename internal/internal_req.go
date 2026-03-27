@@ -14,15 +14,27 @@ import (
 
 // Req represents an HTTP client with customized settings.
 type Req struct {
-	client *http.Client
+	client  *http.Client
+	isMedia bool // when true, omits browser-spoofing headers not needed for CDN media requests
 }
 
-// NewReq creates a new HTTP client with specific transport configurations.
+// NewReq creates a new HTTP client for Chaturbate page requests.
 func NewReq() *Req {
 	return &Req{
 		client: &http.Client{
 			Transport: CreateTransport(),
 		},
+	}
+}
+
+// NewMediaReq creates a new HTTP client for CDN media requests (playlists, segments).
+// It omits headers like X-Requested-With that are only needed for Chaturbate page fetches.
+func NewMediaReq() *Req {
+	return &Req{
+		client: &http.Client{
+			Transport: CreateTransport(),
+		},
+		isMedia: true,
 	}
 }
 
@@ -50,7 +62,7 @@ func (h *Req) Get(ctx context.Context, url string) (string, error) {
 
 // GetBytes sends an HTTP GET request and returns the response as a byte slice.
 func (h *Req) GetBytes(ctx context.Context, url string) ([]byte, error) {
-	req, cancel, err := CreateRequest(ctx, url)
+	req, cancel, err := h.CreateRequest(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
@@ -84,21 +96,28 @@ func (h *Req) GetBytes(ctx context.Context, url string) ([]byte, error) {
 }
 
 // CreateRequest constructs an HTTP GET request with necessary headers.
-func CreateRequest(ctx context.Context, url string) (*http.Request, context.CancelFunc, error) {
+func (h *Req) CreateRequest(ctx context.Context, url string) (*http.Request, context.CancelFunc, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second) // timed out after 10 seconds
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, cancel, err
 	}
-	SetRequestHeaders(req)
+	h.SetRequestHeaders(req)
 	return req, cancel, nil
 }
 
 // SetRequestHeaders applies necessary headers to the request.
-func SetRequestHeaders(req *http.Request) {
-	req.Header.Set("X-Requested-With", "XMLHttpRequest") // So Cloudflare would likely accept the request, and no Age Verification
-
+func (h *Req) SetRequestHeaders(req *http.Request) {
+	if h.isMedia {
+		// Referer satisfies CDN hotlink protection on mmcdn.com media requests.
+		req.Header.Set("Referer", "https://chaturbate.com/")
+		req.Header.Set("Origin", "https://chaturbate.com")
+	} else {
+		// X-Requested-With helps bypass Cloudflare on chaturbate.com page fetches.
+		// Do NOT send it to CDN media hosts (mmcdn.com) as it may cause rejection.
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	}
 	if server.Config.UserAgent != "" {
 		req.Header.Set("User-Agent", server.Config.UserAgent)
 	}
