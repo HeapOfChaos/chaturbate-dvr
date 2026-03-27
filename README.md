@@ -10,7 +10,7 @@ A tool to record **multiple** Chaturbate streams. Supports macOS, Windows, Linux
 
 # Getting Started
 
-Go to the [📦 Releases page](https://github.com/teacat/chaturbate-dvr/releases) and download the appropriate binary. (e.g., `x64_windows_chaturbate-dvr.exe`)
+Go to the [📦 Releases page](https://github.com/HeapOfChaos/chaturbate-dvr/releases) and download the appropriate binary. (e.g., `windows_amd64_chaturbate-dvr.exe`)
 
 &nbsp;
 
@@ -18,10 +18,16 @@ Go to the [📦 Releases page](https://github.com/teacat/chaturbate-dvr/releases
 
 ```bash
 # Windows
-$ x64_windows_chaturbate-dvr.exe
+$ windows_amd64_chaturbate-dvr.exe
 
-# macOS / Linux
-$ ./x64_linux_chaturbate-dvr
+# macOS (Intel)
+$ ./darwin_amd64_chaturbate-dvr
+
+# macOS (Apple Silicon)
+$ ./darwin_arm64_chaturbate-dvr
+
+# Linux
+$ ./linux_amd64_chaturbate-dvr
 ```
 
 Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
@@ -32,10 +38,16 @@ Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
 
 ```bash
 # Windows
-$ x64_windows_chaturbate-dvr.exe -u CHANNEL_USERNAME
+$ windows_amd64_chaturbate-dvr.exe -u CHANNEL_USERNAME
 
-# macOS / Linux
-$ ./x64_linux_chaturbate-dvr -u CHANNEL_USERNAME
+# macOS (Intel)
+$ ./darwin_amd64_chaturbate-dvr -u CHANNEL_USERNAME
+
+# macOS (Apple Silicon)
+$ ./darwin_arm64_chaturbate-dvr -u CHANNEL_USERNAME
+
+# Linux
+$ ./linux_amd64_chaturbate-dvr -u CHANNEL_USERNAME
 ```
 
 This starts recording immediately. The Web UI will be disabled.
@@ -100,7 +112,7 @@ Available options:
 --interval value            Check if the channel is online every N minutes (default: 1)
 --cookies value             Cookies to use in the request (format: key=value; key2=value2)
 --user-agent value          Custom User-Agent for the request
---domain value              Chaturbate domain to use (default: "https://chaturbate.global/")
+--domain value              Chaturbate domain to use (default: "https://chaturbate.com/")
 --debug                     Dump full HTML to a temp file when stream detection fails, for diagnosing Cloudflare blocks
 --help, -h                  show help
 --version, -v               print the version
@@ -187,7 +199,7 @@ The format is based on [Go Template Syntax](https://pkg.go.dev/text/template), a
 
 &nbsp;
 
-Default it hides the sequence if it's zero.
+By default, it hides the sequence if it's zero.
 
 ```
 Pattern: {{.Username}}_{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}-{{.Minute}}-{{.Second}}{{if .Sequence}}_{{.Sequence}}{{end}}
@@ -210,7 +222,7 @@ Pattern: video/{{.Username}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}-{{.Minute}}
  Output: video/yamiodymel/2024-01-02_13-45-00_0.ts
 ```
 
-_Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams (most Chaturbate streams) are saved as `.mp4` with muxed video and audio._
+_Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams are saved as `.mp4` with muxed video and audio._
 
 &nbsp;
 
@@ -218,7 +230,7 @@ _Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams (most Chaturbate st
 
 **Q: The program closes immediately on Windows.**
 
-> Open it via **Command Prompt**, the error message should appear. If needed, [create an issue](https://github.com/teacat/chaturbate-dvr/issues).
+> Open it via **Command Prompt**, the error message should appear. If needed, [create an issue](https://github.com/HeapOfChaos/chaturbate-dvr/issues).
 
 &nbsp;
 
