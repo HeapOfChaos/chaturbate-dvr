@@ -1,11 +1,10 @@
-version: "3.8"
-
 services:
-    chaturbate-dvr:
-        image: yamiodymel/chaturbate-dvr
-        container_name: chaturbate-dvr
-        ports:
-            - "8080:8080"
-        volumes:
-            - ./videos:/usr/src/app/videos
-            - ./conf:/usr/src/app/conf
+  chaturbate-dvr:
+    image: ghcr.io/heapofchaos/chaturbate-dvr:latest
+    container_name: chaturbate-dvr
+    ports:
+      - 8080:8080
+    volumes:
+      - ./videos:/usr/src/app/videos
+      - ./conf:/usr/src/app/conf
+    restart: unless-stopped

@@ -1,12 +1,13 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /workspace
 
 COPY ./ ./
-RUN go build -o chaturbate-dvr .
+RUN go build -ldflags=-s -w -o chaturbate-dvr .
 
-FROM scratch AS runnable
+FROM alpine:3 AS runnable
+RUN apk --no-cache add ca-certificates
 WORKDIR /usr/src/app
 
 COPY --from=builder /workspace/chaturbate-dvr /chaturbate-dvr
 
-ENTRYPOINT ["/chaturbate-dvr"]
+ENTRYPOINT [/chaturbate-dvr]
