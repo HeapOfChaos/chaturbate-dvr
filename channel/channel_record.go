@@ -38,17 +38,22 @@ func (ch *Channel) Monitor() {
 			return errors.Is(err, internal.ErrChannelOffline) ||
 				errors.Is(err, internal.ErrPrivateStream) ||
 				errors.Is(err, internal.ErrAgeVerification) ||
-				errors.Is(err, internal.ErrCloudflareBlocked)
+				errors.Is(err, internal.ErrCloudflareBlocked) ||
+				errors.Is(err, internal.ErrRoomPasswordRequired)
 		}
 		onRetry := func(_ uint, err error) {
 			ch.UpdateOnlineStatus(false)
 
-			if errors.Is(err, internal.ErrChannelOffline) || errors.Is(err, internal.ErrPrivateStream) {
-				ch.Info("channel is offline or private, try again in %d min(s)", server.Config.Interval)
+			if errors.Is(err, internal.ErrChannelOffline) {
+				ch.Info("channel is offline, try again in %d min(s)", server.Config.Interval)
+			} else if errors.Is(err, internal.ErrPrivateStream) {
+				ch.Info("channel is in a private show, try again in %d min(s)", server.Config.Interval)
 			} else if errors.Is(err, internal.ErrCloudflareBlocked) {
 				ch.Info("channel was blocked by Cloudflare; try with `-cookies` and `-user-agent`? try again in %d min(s)", server.Config.Interval)
 			} else if errors.Is(err, internal.ErrAgeVerification) {
 				ch.Info("age verification required; pass cookies with `-cookies` to authenticate, try again in %d min(s)", server.Config.Interval)
+			} else if errors.Is(err, internal.ErrRoomPasswordRequired) {
+				ch.Info("room requires a password, try again in %d min(s)", server.Config.Interval)
 			} else if errors.Is(err, context.Canceled) {
 				// ...
 			} else {

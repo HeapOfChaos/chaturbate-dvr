@@ -32,6 +32,7 @@ func (c *Client) GetStream(ctx context.Context, username string) (*Stream, error
 type apiResponse struct {
 	RoomStatus string `json:"room_status"`
 	HLSSource  string `json:"hls_source"`
+	Code       string `json:"code"`
 }
 
 func FetchStream(ctx context.Context, client *internal.Req, username string) (*Stream, error) {
@@ -44,6 +45,10 @@ func FetchStream(ctx context.Context, client *internal.Req, username string) (*S
 	var resp apiResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse stream info: %w", err)
+	}
+
+	if resp.Code == "unauthorized" {
+		return nil, internal.ErrRoomPasswordRequired
 	}
 
 	if server.Config.Debug {
