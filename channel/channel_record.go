@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -56,7 +57,9 @@ func (ch *Channel) Monitor() {
 		}
 		delayFn := func(_ uint, err error, _ *retry.Config) time.Duration {
 			if isExpectedOffline(err) {
-				return time.Duration(server.Config.Interval) * time.Minute
+				base := time.Duration(server.Config.Interval) * time.Minute
+				jitter := time.Duration(rand.Int63n(int64(base/5))) - base/10 // ±10% of interval
+				return base + jitter
 			}
 			// Transient error (502, decode failure, network hiccup) - recover quickly
 			return 10 * time.Second

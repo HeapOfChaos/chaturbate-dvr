@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,9 +16,6 @@ import (
 	"github.com/teacat/chaturbate-dvr/internal"
 	"github.com/teacat/chaturbate-dvr/server"
 )
-
-var roomDossierRegexp = regexp.MustCompile(`window\.initialRoomDossier = "(.*?)"`)
-var titleRegexp = regexp.MustCompile(`(?i)<title[^>]*>(.*?)</title>`)
 
 type Client struct {
 	Req *internal.Req
@@ -34,57 +29,36 @@ func (c *Client) GetStream(ctx context.Context, username string) (*Stream, error
 	return FetchStream(ctx, c.Req, username)
 }
 
-func FetchStream(ctx context.Context, client *internal.Req, username string) (*Stream, error) {
-	url := fmt.Sprintf("%s%s", server.Config.Domain, username)
-	body, err := client.Get(ctx, url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get page body: %w", err)
-	}
-
-	if !strings.Contains(body, "window.initialRoomDossier") {
-		if server.Config.Debug {
-			pageTitle := "(no title found)"
-			if m := titleRegexp.FindStringSubmatch(body); len(m) > 1 {
-				pageTitle = strings.TrimSpace(m[1])
-			}
-			fmt.Printf("[DEBUG] initialRoomDossier not found\n")
-			fmt.Printf("[DEBUG]   URL:                  %s\n", url)
-			fmt.Printf("[DEBUG]   Page title:            %s\n", pageTitle)
-			fmt.Printf("[DEBUG]   Response body length:  %d bytes\n", len(body))
-
-			tmpFile, ferr := os.CreateTemp("", fmt.Sprintf("chaturbate-debug-%s-*.html", username))
-			if ferr == nil {
-				if _, werr := tmpFile.WriteString(body); werr == nil {
-					fmt.Printf("[DEBUG]   Full body written to: %s\n", tmpFile.Name())
-				}
-				tmpFile.Close()
-			}
-		}
-		return nil, internal.ErrChannelOffline
-	}
-
-	return ParseStream(body)
+type apiResponse struct {
+	RoomStatus string `json:"room_status"`
+	HLSSource  string `json:"hls_source"`
 }
 
-func ParseStream(body string) (*Stream, error) {
-	matches := roomDossierRegexp.FindStringSubmatch(body)
-	if len(matches) == 0 {
-		return nil, errors.New("room dossier not found")
-	}
-
-	sourceData, err := strconv.Unquote(strings.Replace(strconv.Quote(matches[1]), `\\u`, `\u`, -1))
+func FetchStream(ctx context.Context, client *internal.Req, username string) (*Stream, error) {
+	apiURL := fmt.Sprintf("%sapi/chatvideocontext/%s/", server.Config.Domain, username)
+	body, err := client.Get(ctx, apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode unicode: %w", err)
+		return nil, fmt.Errorf("failed to get stream info: %w", err)
 	}
 
-	var room struct {
-		HLSSource string `json:"hls_source"`
-	}
-	if err := json.Unmarshal([]byte(sourceData), &room); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	var resp apiResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse stream info: %w", err)
 	}
 
-	return &Stream{HLSSource: room.HLSSource}, nil
+	if server.Config.Debug {
+		fmt.Printf("[DEBUG] API response for %s: room_status=%s hls_source=%v\n", username, resp.RoomStatus, resp.HLSSource != "")
+	}
+
+	if resp.HLSSource != "" {
+		return &Stream{HLSSource: resp.HLSSource}, nil
+	}
+
+	if resp.RoomStatus == "private" {
+		return nil, internal.ErrPrivateStream
+	}
+
+	return nil, internal.ErrChannelOffline
 }
 
 type Stream struct {
