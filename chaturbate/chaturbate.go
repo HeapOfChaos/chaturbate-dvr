@@ -13,9 +13,47 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/grafov/m3u8"
 	"github.com/samber/lo"
-	"github.com/teacat/chaturbate-dvr/internal"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/internal"
+	"github.com/HeapOfChaos/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/site"
 )
+
+// Chaturbate implements site.Site for the Chaturbate platform.
+type Chaturbate struct{}
+
+// New returns a new Chaturbate site implementation.
+func New() *Chaturbate {
+	return &Chaturbate{}
+}
+
+// FetchStream implements site.Site. It returns *site.StreamInfo if online, nil if offline.
+func (cb *Chaturbate) FetchStream(ctx context.Context, req *internal.Req, username string) (*site.StreamInfo, error) {
+	stream, err := FetchStream(ctx, req, username)
+	if err != nil {
+		// Offline sentinel errors are not real errors for the site.Site interface.
+		if errors.Is(err, internal.ErrChannelOffline) ||
+			errors.Is(err, internal.ErrPrivateStream) ||
+			errors.Is(err, internal.ErrHiddenStream) {
+			return nil, err
+		}
+		return nil, err
+	}
+	if stream == nil || stream.HLSSource == "" {
+		return nil, nil
+	}
+	return &site.StreamInfo{
+		HLSURL:           stream.HLSSource,
+		RoomTitle:        stream.RoomTitle,
+		Gender:           stream.Gender,
+		NumViewers:       stream.NumViewers,
+		SummaryCardImage: stream.SummaryCardImage,
+	}, nil
+}
+
+// FetchLastBroadcast implements site.Site.
+func (cb *Chaturbate) FetchLastBroadcast(ctx context.Context, req *internal.Req, username string) (int64, error) {
+	return FetchLastBroadcast(ctx, req, username)
+}
 
 type Client struct {
 	Req *internal.Req

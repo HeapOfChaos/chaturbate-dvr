@@ -8,30 +8,43 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/teacat/chaturbate-dvr/chaturbate"
-	"github.com/teacat/chaturbate-dvr/internal"
-	"github.com/teacat/chaturbate-dvr/notifier"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/chaturbate"
+	"github.com/HeapOfChaos/chaturbate-dvr/internal"
+	"github.com/HeapOfChaos/chaturbate-dvr/notifier"
+	"github.com/HeapOfChaos/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/site"
+	"github.com/HeapOfChaos/chaturbate-dvr/stripchat"
 )
+
+// resolveSite returns the site.Site implementation for the given site name.
+// An empty or unrecognised name defaults to Chaturbate.
+func resolveSite(siteName string) site.Site {
+	switch siteName {
+	case "stripchat":
+		return stripchat.New()
+	default:
+		return chaturbate.New()
+	}
+}
 
 // Monitor starts monitoring the channel for live streams and records them.
 func (ch *Channel) Monitor() {
-	client := chaturbate.NewClient()
+	s := resolveSite(ch.Config.Site)
+	req := internal.NewReq()
 	ch.Info("starting to record `%s`", ch.Config.Username)
 
 	// Seed total disk usage in the background so the UI shows it immediately.
 	go ch.ScanTotalDiskUsage()
 
-	// Seed StreamedAt from biocontext if we haven't seen this channel stream yet.
+	// Seed StreamedAt from the site API if we haven't seen this channel stream yet.
 	if ch.StreamedAt == 0 {
-		if ts, err := chaturbate.FetchLastBroadcast(context.Background(), client.Req, ch.Config.Username); err == nil && ts > 0 {
+		if ts, err := s.FetchLastBroadcast(context.Background(), req, ch.Config.Username); err == nil && ts > 0 {
 			ch.StreamedAt = ts
 			ch.Config.StreamedAt = ts
 			_ = server.Manager.SaveConfig()
 			ch.Update()
 		}
 	}
-
 
 	// Create a new context with a cancel function,
 	// the CancelFunc will be stored in the channel's CancelFunc field
@@ -45,7 +58,7 @@ func (ch *Channel) Monitor() {
 		}
 
 		pipeline := func() error {
-			return ch.RecordStream(ctx, client)
+			return ch.RecordStream(ctx, s, req)
 		}
 		// isExpectedOffline returns true for errors where the full interval delay is appropriate.
 		// Transient errors (502, decode errors, network hiccups) should retry quickly.
@@ -135,47 +148,46 @@ func (ch *Channel) Update() {
 	ch.UpdateCh <- true
 }
 
-// RecordStream records the stream of the channel using the provided client.
+// RecordStream records the stream of the channel using the provided site and HTTP client.
 // It retrieves the stream information and starts watching the segments.
-func (ch *Channel) RecordStream(ctx context.Context, client *chaturbate.Client) error {
-	stream, err := client.GetStream(ctx, ch.Config.Username)
-	// Update static metadata whenever the API responds, even if the channel is offline.
-	// This ensures thumbnails and room info show for channels not currently recording.
-	// Mirror changes back to Config so they survive restarts via SaveConfig.
-	if stream != nil {
-		changed := false
-		if stream.RoomTitle != "" && stream.RoomTitle != ch.RoomTitle {
-			ch.RoomTitle = stream.RoomTitle
-			ch.Config.RoomTitle = stream.RoomTitle
-			changed = true
-		}
-		if stream.Gender != "" && stream.Gender != ch.Gender {
-			ch.Gender = stream.Gender
-			ch.Config.Gender = stream.Gender
-			changed = true
-		}
-		if stream.EdgeRegion != "" {
-			ch.EdgeRegion = stream.EdgeRegion
-		}
-		if stream.SummaryCardImage != "" && stream.SummaryCardImage != ch.SummaryCardImage {
-			ch.SummaryCardImage = stream.SummaryCardImage
-			ch.Config.SummaryCardImage = stream.SummaryCardImage
-			changed = true
-		}
-		if changed {
-			_ = server.Manager.SaveConfig()
-		}
-	}
+func (ch *Channel) RecordStream(ctx context.Context, s site.Site, req *internal.Req) error {
+	streamInfo, err := s.FetchStream(ctx, req, ch.Config.Username)
 	if err != nil {
 		return fmt.Errorf("get stream: %w", err)
 	}
+	if streamInfo == nil {
+		// Site returned nil, nil — channel is offline.
+		return fmt.Errorf("get stream: %w", internal.ErrChannelOffline)
+	}
+
+	// Update static metadata whenever the API responds.
+	changed := false
+	if streamInfo.RoomTitle != "" && streamInfo.RoomTitle != ch.RoomTitle {
+		ch.RoomTitle = streamInfo.RoomTitle
+		ch.Config.RoomTitle = streamInfo.RoomTitle
+		changed = true
+	}
+	if streamInfo.Gender != "" && streamInfo.Gender != ch.Gender {
+		ch.Gender = streamInfo.Gender
+		ch.Config.Gender = streamInfo.Gender
+		changed = true
+	}
+	if streamInfo.SummaryCardImage != "" && streamInfo.SummaryCardImage != ch.SummaryCardImage {
+		ch.SummaryCardImage = streamInfo.SummaryCardImage
+		ch.Config.SummaryCardImage = streamInfo.SummaryCardImage
+		changed = true
+	}
+	if changed {
+		_ = server.Manager.SaveConfig()
+	}
+
 	ch.StreamedAt = time.Now().Unix()
 	ch.Config.StreamedAt = ch.StreamedAt
 	_ = server.Manager.SaveConfig()
 	ch.Sequence = 0
-	ch.NumViewers = stream.NumViewers
+	ch.NumViewers = streamInfo.NumViewers
 
-	playlist, err := stream.GetPlaylist(ctx, ch.Config.Resolution, ch.Config.Framerate)
+	playlist, err := chaturbate.FetchPlaylist(ctx, streamInfo.HLSURL, ch.Config.Resolution, ch.Config.Framerate)
 	if err != nil {
 		return fmt.Errorf("get playlist: %w", err)
 	}
@@ -192,7 +204,7 @@ func (ch *Channel) RecordStream(ctx context.Context, client *chaturbate.Client) 
 		}
 	}()
 
-	ch.UpdateOnlineStatus(true) // Update online status after `GetPlaylist` is OK
+	ch.UpdateOnlineStatus(true) // Update online status after playlist is OK
 
 	// Reset CF state on successful stream start.
 	ch.CFBlockCount = 0

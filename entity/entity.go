@@ -17,6 +17,7 @@ const (
 type ChannelConfig struct {
 	IsPaused    bool   `json:"is_paused"`
 	Username    string `json:"username"`
+	Site        string `json:"site,omitempty"` // "chaturbate" (default) or "stripchat"
 	Framerate   int    `json:"framerate"`
 	Resolution  int    `json:"resolution"`
 	Pattern     string `json:"pattern"`
@@ -57,6 +58,7 @@ type ChannelInfo struct {
 	NumViewers       int
 	EdgeRegion       string
 	SummaryCardImage string
+	SiteDomain       string // pre-computed site URL, e.g. "https://chaturbate.com/" or "https://stripchat.com/"
 }
 
 // Config holds the configuration for the application.

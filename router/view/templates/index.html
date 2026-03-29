@@ -378,14 +378,27 @@
                         <div class="ts-control is-wide">
                             <div class="label">Channel Username</div>
                             <div class="content">
-                                <div class="ts-input is-start-labeled">
-                                    <div class="label">{{ .Config.Domain }}</div>
+                                <div class="ts-input">
                                     <input type="text" name="username" autofocus required />
                                 </div>
                                 <div class="ts-text is-description has-top-spaced-small">Use commas to separate multiple channel names, e.g. "channel1, channel2, channel3".</div>
                             </div>
                         </div>
                         <!-- / Channel Username -->
+
+                        <!-- Site -->
+                        <div class="ts-control is-wide has-top-spaced-large">
+                            <div class="label">Site</div>
+                            <div class="content">
+                                <div class="ts-select">
+                                    <select name="site">
+                                        <option value="chaturbate" selected>Chaturbate</option>
+                                        <option value="stripchat">Stripchat</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- / Site -->
 
                         <!-- Resolution -->
                         <div class="ts-control is-wide has-top-spaced-large">

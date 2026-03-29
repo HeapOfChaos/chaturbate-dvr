@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/teacat/chaturbate-dvr/entity"
-	"github.com/teacat/chaturbate-dvr/internal"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/entity"
+	"github.com/HeapOfChaos/chaturbate-dvr/internal"
+	"github.com/HeapOfChaos/chaturbate-dvr/server"
 )
 
 // Channel represents a channel instance.
@@ -126,6 +126,11 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 	copy(logs, ch.Logs)
 	ch.logsMu.RUnlock()
 
+	siteDomain := server.Config.Domain // default to Chaturbate domain
+	if ch.Config.Site == "stripchat" {
+		siteDomain = "https://stripchat.com/"
+	}
+
 	return &entity.ChannelInfo{
 		IsOnline:         ch.IsOnline,
 		IsPaused:         ch.Config.IsPaused,
@@ -145,6 +150,7 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 		NumViewers:       ch.NumViewers,
 		EdgeRegion:       ch.EdgeRegion,
 		SummaryCardImage: ch.SummaryCardImage,
+		SiteDomain:       siteDomain,
 	}
 }
 

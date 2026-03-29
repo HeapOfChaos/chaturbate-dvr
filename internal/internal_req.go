@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/server"
 )
 
 // Req represents an HTTP client with customized settings.
@@ -116,6 +116,37 @@ func (h *Req) CreateRequest(ctx context.Context, url string) (*http.Request, con
 	}
 	h.SetRequestHeaders(req)
 	return req, cancel, nil
+}
+
+// DoRequest executes an already-constructed *http.Request and returns the
+// response body as a string. This allows callers to set extra headers on the
+// request before executing it (e.g. site-specific Referer or X-Requested-With).
+func (h *Req) DoRequest(req *http.Request) (string, error) {
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("client do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read body: %w", err)
+	}
+
+	// Check for Cloudflare protection
+	if strings.Contains(string(b), "<title>Just a moment...</title>") {
+		return "", ErrCloudflareBlocked
+	}
+	// Check for Age Verification
+	if strings.Contains(string(b), "Verify your age") {
+		return "", ErrAgeVerification
+	}
+
+	if resp.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("forbidden: %w", ErrPrivateStream)
+	}
+
+	return string(b), nil
 }
 
 // SetRequestHeaders applies necessary headers to the request.

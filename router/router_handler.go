@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/teacat/chaturbate-dvr/entity"
-	"github.com/teacat/chaturbate-dvr/internal"
-	"github.com/teacat/chaturbate-dvr/manager"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/chaturbate-dvr/entity"
+	"github.com/HeapOfChaos/chaturbate-dvr/internal"
+	"github.com/HeapOfChaos/chaturbate-dvr/manager"
+	"github.com/HeapOfChaos/chaturbate-dvr/server"
 )
 
 // IndexData represents the data structure for the index page.
@@ -30,6 +30,7 @@ func Index(c *gin.Context) {
 // CreateChannelRequest represents the request body for creating a channel.
 type CreateChannelRequest struct {
 	Username    string `form:"username" binding:"required"`
+	Site        string `form:"site"`
 	Framerate   int    `form:"framerate" binding:"required"`
 	Resolution  int    `form:"resolution" binding:"required"`
 	Pattern     string `form:"pattern" binding:"required"`
@@ -45,11 +46,18 @@ func CreateChannel(c *gin.Context) {
 		return
 	}
 
+	// Normalise site: default to "chaturbate" if empty or unrecognised.
+	siteName := req.Site
+	if siteName != "stripchat" {
+		siteName = "chaturbate"
+	}
+
 	var errs []string
 	for _, username := range strings.Split(req.Username, ",") {
 		if err := server.Manager.CreateChannel(&entity.ChannelConfig{
 			IsPaused:    false,
 			Username:    username,
+			Site:        siteName,
 			Framerate:   req.Framerate,
 			Resolution:  req.Resolution,
 			Pattern:     req.Pattern,
