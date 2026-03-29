@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -13,9 +14,10 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/grafov/m3u8"
 	"github.com/samber/lo"
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
-	"github.com/HeapOfChaos/chaturbate-dvr/server"
-	"github.com/HeapOfChaos/chaturbate-dvr/site"
+	"github.com/HeapOfChaos/goondvr/internal"
+	"github.com/HeapOfChaos/goondvr/server"
+	"github.com/HeapOfChaos/goondvr/site"
+	"github.com/HeapOfChaos/goondvr/stripchat"
 )
 
 // Chaturbate implements site.Site for the Chaturbate platform.
@@ -159,26 +161,68 @@ type Stream struct {
 }
 
 func (s *Stream) GetPlaylist(ctx context.Context, resolution, framerate int) (*Playlist, error) {
-	return FetchPlaylist(ctx, s.HLSSource, resolution, framerate)
+	return FetchPlaylist(ctx, s.HLSSource, resolution, framerate, "", "")
 }
 
-func FetchPlaylist(ctx context.Context, hlsSource string, resolution, framerate int) (*Playlist, error) {
+func FetchPlaylist(ctx context.Context, hlsSource string, resolution, framerate int, cdnReferer, mouflonPDKey string) (*Playlist, error) {
 	if hlsSource == "" {
 		// The page loaded but the stream is not active — treat as offline.
 		return nil, internal.ErrChannelOffline
 	}
 
-	client := internal.NewMediaReq()
+	var client *internal.Req
+	if cdnReferer != "" {
+		client = internal.NewMediaReqWithReferer(cdnReferer)
+	} else {
+		client = internal.NewMediaReq()
+	}
 	resp, err := client.Get(ctx, hlsSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch HLS source: %w", err)
+	}
+
+	if server.Config.Debug {
+		fmt.Printf("[DEBUG] master playlist response for %s:\n%s\n", hlsSource, resp)
+	}
+
+	// Extract Stripchat's custom MOUFLON tag which carries the CDN pkey.
+	// Format: #EXT-X-MOUFLON:PSCH:v2:{pkey}
+	// The variant URLs in the master omit the pkey; it must be appended when fetching.
+	var mouflonSuffix string
+	pkey := stripchat.ParsePKeyFromMaster(resp)
+	if pkey != "" {
+		// Build the query suffix needed for variant playlist URLs.
+		mouflonSuffix = fmt.Sprintf("&psch=v2&pkey=%s", pkey)
+
+		// Resolve the actual decryption key (pdkey) from the pkey.
+		if mouflonPDKey == "auto" {
+			mouflonPDKey = stripchat.ResolvePDKey(ctx, pkey)
+			if mouflonPDKey == "pending" {
+				if server.Config.Debug {
+					fmt.Println("[DEBUG] mouflon: candidate keys extracted; will test against first encrypted segment")
+				}
+			} else if mouflonPDKey != "" {
+				if server.Config.Debug {
+					fmt.Printf("[DEBUG] mouflon: pdkey resolved for pkey=%s (%d chars)\n", pkey, len(mouflonPDKey))
+				}
+			} else {
+				fmt.Printf("[WARN] mouflon: no pdkey for pkey=%s; segments will 404. Use --stripchat-pdkey to set manually.\n", pkey)
+			}
+		}
 	}
 
 	playlist, err := ParsePlaylist(resp, hlsSource, resolution, framerate)
 	if err != nil {
 		return nil, err
 	}
+	if mouflonSuffix != "" {
+		playlist.PlaylistURL += mouflonSuffix
+		if playlist.AudioPlaylistURL != "" {
+			playlist.AudioPlaylistURL += mouflonSuffix
+		}
+	}
 	playlist.Client = client
+	playlist.MouflonPDKey = mouflonPDKey
 	return playlist, nil
 }
 
@@ -214,6 +258,7 @@ type Playlist struct {
 	Framerate        int
 	FileExt          string        // ".ts" for legacy HLS, ".mp4" for LL-HLS fMP4
 	Client           *internal.Req // reuse the same client that fetched the master playlist
+	MouflonPDKey     string        // Stripchat MOUFLON v2 decryption key; empty for Chaturbate
 }
 
 // VideoResolution represents a video resolution and its corresponding framerate URLs.
@@ -291,6 +336,13 @@ func PickPlaylist(masterPlaylist *m3u8.MasterPlaylist, baseURL string, resolutio
 		fileExt = ".mp4"
 	}
 
+	// Stripchat uses fMP4 segments (.mp4) even though the playlist URL
+	// doesn't contain "llhls" or end in ".m4s". Detect by checking the
+	// master playlist for EXT-X-MAP (init segment indicator) in any variant.
+	if fileExt == ".ts" && strings.Contains(baseURL, "doppiocdn") {
+		fileExt = ".mp4"
+	}
+
 	// For LL-HLS streams, find the audio rendition from the selected variant's EXT-X-MEDIA alternatives.
 	var audioPlaylistURL string
 	if fileExt == ".mp4" {
@@ -314,10 +366,11 @@ func PickPlaylist(masterPlaylist *m3u8.MasterPlaylist, baseURL string, resolutio
 		}
 	}
 
+	resolvedPlaylist := resolveHLSURL(baseURL, playlistURL)
 	return &Playlist{
-		PlaylistURL:      resolveHLSURL(baseURL, playlistURL),
+		PlaylistURL:      resolvedPlaylist,
 		AudioPlaylistURL: audioPlaylistURL,
-		RootURL:          strings.SplitN(baseURL, "?", 2)[0],
+		RootURL:          strings.SplitN(resolvedPlaylist, "?", 2)[0],
 		Resolution:       finalResolution,
 		Framerate:        finalFramerate,
 		FileExt:          fileExt,
@@ -337,6 +390,115 @@ func (p *Playlist) WatchSegments(ctx context.Context, handler WatchHandler) erro
 	return p.watchVideoOnlySegments(ctx, handler)
 }
 
+// safeDecodeFrom wraps m3u8.DecodeFrom with a recover so that library panics
+// (e.g. nil-pointer on unknown LL-HLS tags) are returned as errors instead of
+// crashing the process.
+func safeDecodeFrom(r io.Reader) (pl m3u8.Playlist, listType m3u8.ListType, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("m3u8 decode panic: %v", rec)
+		}
+	}()
+	return m3u8.DecodeFrom(r, true)
+}
+
+// decodeMouflon rewrites a Stripchat media playlist that uses the proprietary
+// #EXT-X-MOUFLON:URI: tag to hide real segment URLs behind a generic placeholder
+// (e.g. https://.../media.mp4). Each MOUFLON URI tag is consumed and its real
+// URL replaces the following non-comment placeholder line.
+//
+// When pdkey is non-empty, the encrypted token in each URI is decrypted using
+// the MOUFLON v2 algorithm (reverse -> base64-decode -> XOR SHA256(pdkey)).
+// If pdkey is "pending", the first encrypted URI is used to brute-force the
+// correct key from candidate strings extracted from the player JS.
+func decodeMouflon(resp, pdkey string) string {
+	if !strings.Contains(resp, "#EXT-X-MOUFLON:URI:") {
+		return resp
+	}
+
+	// If pdkey is "pending", try to find the working key from candidates
+	// using the first MOUFLON URI as a test sample.
+	if pdkey == "pending" {
+		for _, line := range strings.Split(resp, "\n") {
+			trimmed := strings.TrimRight(line, "\r")
+			if strings.HasPrefix(trimmed, "#EXT-X-MOUFLON:URI:") {
+				sampleURI := strings.TrimPrefix(trimmed, "#EXT-X-MOUFLON:URI:")
+				found := stripchat.TryFindWorkingKey(sampleURI)
+				if found != "" {
+					pdkey = found
+				} else {
+					pdkey = "" // no working key found
+				}
+				break
+			}
+		}
+	}
+
+	lines := strings.Split(resp, "\n")
+	out := make([]string, 0, len(lines))
+	var pendingURI string
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, "\r")
+		if strings.HasPrefix(trimmed, "#EXT-X-MOUFLON:URI:") {
+			uri := strings.TrimPrefix(trimmed, "#EXT-X-MOUFLON:URI:")
+			if pdkey != "" {
+				decrypted, err := stripchat.DecryptMouflonURI(uri, pdkey)
+				if err != nil {
+					if server.Config.Debug {
+						fmt.Printf("[DEBUG] mouflon decrypt failed for URI: %v\n", err)
+					}
+				} else {
+					uri = decrypted
+				}
+			}
+			pendingURI = uri
+			continue // drop the MOUFLON tag line entirely
+		}
+		if pendingURI != "" && !strings.HasPrefix(trimmed, "#") && trimmed != "" {
+			out = append(out, pendingURI) // real URI replaces placeholder
+			pendingURI = ""
+			continue // drop the placeholder line
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
+// normalizeM3U8 fixes non-standard #EXTINF lines that lack a trailing comma,
+// and strips LL-HLS extension tags that cause the m3u8 library to panic.
+// Some CDNs (e.g. Stripchat) emit "#EXTINF:2.000" instead of "#EXTINF:2.000,".
+func normalizeM3U8(resp string) string {
+	// LL-HLS tags the grafov/m3u8 library cannot handle without panicking.
+	stripPrefixes := []string{
+		"#EXT-X-PART:",
+		"#EXT-X-PART-INF:",
+		"#EXT-X-PRELOAD-HINT:",
+		"#EXT-X-SERVER-CONTROL:",
+		"#EXT-X-RENDITION-REPORT:",
+		"#EXT-X-MOUFLON:",
+	}
+	lines := strings.Split(resp, "\n")
+	out := lines[:0]
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, "\r")
+		skip := false
+		for _, pfx := range stripPrefixes {
+			if strings.HasPrefix(trimmed, pfx) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#EXTINF:") && !strings.Contains(trimmed, ",") {
+			trimmed = trimmed + ","
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
 // watchVideoOnlySegments is the original single-track segment loop.
 func (p *Playlist) watchVideoOnlySegments(ctx context.Context, handler WatchHandler) error {
 	client := p.Client
@@ -344,8 +506,14 @@ func (p *Playlist) watchVideoOnlySegments(ctx context.Context, handler WatchHand
 		client = internal.NewMediaReq()
 	}
 	lastSeq := -1
+	lastSegURI := ""
 	lastMapURI := ""
 	consecutiveErrors := 0
+
+	// For fMP4 streams, normalise tfdt timestamps so the recording starts
+	// at 0:00 instead of the CDN's absolute stream uptime. Always attempt
+	// this — extractAllTrackBaseTimes returns nil on non-fMP4 (.ts) data.
+	var trackBaseTimes map[uint32]uint64
 
 	for {
 		resp, err := client.Get(ctx, p.PlaylistURL)
@@ -356,7 +524,7 @@ func (p *Playlist) watchVideoOnlySegments(ctx context.Context, handler WatchHand
 			<-time.After(2 * time.Second)
 			continue
 		}
-		pl, _, err := m3u8.DecodeFrom(strings.NewReader(resp), true)
+		pl, _, err := safeDecodeFrom(strings.NewReader(normalizeM3U8(decodeMouflon(resp, p.MouflonPDKey))))
 		if err != nil {
 			if server.Config.Debug {
 				fmt.Printf("[DEBUG] variant playlist parse failed: %v\n", err)
@@ -379,17 +547,41 @@ func (p *Playlist) watchVideoOnlySegments(ctx context.Context, handler WatchHand
 		}
 		consecutiveErrors = 0
 
+		if server.Config.Debug {
+			var count int
+			for _, v := range playlist.Segments {
+				if v != nil {
+					count++
+				}
+			}
+			fmt.Printf("[DEBUG] playlist poll: mediaSeq=%d segments=%d lastSeq=%d url=%s\n",
+				playlist.SeqNo, count, lastSeq, p.PlaylistURL)
+		}
+
 		for _, v := range playlist.Segments {
 			if v == nil {
 				continue
 			}
 			seq := internal.SegmentSeq(v.URI)
-			if server.Config.Debug && lastSeq == -1 {
+			// Fall back to the HLS media sequence number (v.SeqId) when the URI
+			// doesn't contain a parseable sequence (e.g. Stripchat .mp4 segments).
+			if seq == -1 && v.SeqId > 0 {
+				seq = int(v.SeqId)
+			}
+			if server.Config.Debug && lastSeq == -1 && lastSegURI == "" {
 				fmt.Printf("[DEBUG] first segment URI: %s (seq=%d)\n", v.URI, seq)
 			}
-			if seq == -1 || seq <= lastSeq {
-				continue
+			if seq != -1 {
+				if seq <= lastSeq {
+					continue
+				}
+				lastSeq = seq
+			} else {
+				if v.URI == lastSegURI {
+					continue
+				}
 			}
+			lastSegURI = v.URI
 			if v.Map != nil && v.Map.URI != lastMapURI {
 				mapURL := resolveHLSURL(p.RootURL, v.Map.URI)
 				initBytes, err := client.GetBytes(ctx, mapURL)
@@ -413,9 +605,28 @@ func (p *Playlist) watchVideoOnlySegments(ctx context.Context, handler WatchHand
 				retry.Attempts(3),
 				retry.Delay(600*time.Millisecond),
 				retry.DelayType(retry.FixedDelay),
+				retry.RetryIf(func(err error) bool {
+					return !errors.Is(err, internal.ErrNotFound)
+				}),
 			)
 			if err != nil {
+				if errors.Is(err, internal.ErrNotFound) {
+					if server.Config.Debug {
+						fmt.Printf("[DEBUG] segment 404 (skipping): seq=%d %s\n", seq, resolveHLSURL(p.RootURL, v.URI))
+					}
+					continue // segment expired on CDN; move on to next
+				}
+				if server.Config.Debug {
+					fmt.Printf("[DEBUG] segment error (breaking inner loop): seq=%d err=%v\n", seq, err)
+				}
 				break
+			}
+			// Normalise fMP4 tfdt so playback starts at 0:00 (all tracks).
+			if trackBaseTimes == nil {
+				trackBaseTimes = extractAllTrackBaseTimes(resp)
+			}
+			if trackBaseTimes != nil {
+				resp = shiftSegmentAllTracks(resp, trackBaseTimes)
 			}
 			if err := handler(resp, v.Duration); err != nil {
 				return fmt.Errorf("handler: %w", err)
@@ -465,7 +676,7 @@ func (p *Playlist) watchMuxedSegments(ctx context.Context, handler WatchHandler)
 			<-time.After(2 * time.Second)
 			continue
 		}
-		vpl, _, err := m3u8.DecodeFrom(strings.NewReader(videoResp), true)
+		vpl, _, err := safeDecodeFrom(strings.NewReader(normalizeM3U8(decodeMouflon(videoResp, p.MouflonPDKey))))
 		if err != nil {
 			if server.Config.Debug {
 				fmt.Printf("[DEBUG] muxed: video playlist parse failed: %v\n", err)
@@ -490,7 +701,7 @@ func (p *Playlist) watchMuxedSegments(ctx context.Context, handler WatchHandler)
 			<-time.After(2 * time.Second)
 			continue
 		}
-		apl, _, err := m3u8.DecodeFrom(strings.NewReader(audioResp), true)
+		apl, _, err := safeDecodeFrom(strings.NewReader(normalizeM3U8(decodeMouflon(audioResp, p.MouflonPDKey))))
 		if err != nil {
 			if server.Config.Debug {
 				fmt.Printf("[DEBUG] muxed: audio playlist parse failed: %v\n", err)

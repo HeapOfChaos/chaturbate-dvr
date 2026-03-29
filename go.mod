@@ -1,4 +1,4 @@
-module github.com/teacat/chaturbate-dvr
+module github.com/HeapOfChaos/goondvr
 
 go 1.23.0
 

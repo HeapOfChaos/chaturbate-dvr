@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/teacat/chaturbate-dvr/entity"
+	"github.com/HeapOfChaos/goondvr/entity"
 )
 
 var Manager IManager
@@ -20,6 +20,7 @@ type IManager interface {
 	SaveConfig() error
 	Shutdown()
 	GetChannelThumb(username string) string
+	GetChannelLiveThumb(username string) string
 	ReportCFBlock(username string)
 	ResetCFBlock(username string)
 	GetStats() StatsResponse

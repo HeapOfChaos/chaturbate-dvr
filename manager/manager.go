@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/r3labs/sse/v2"
-	"github.com/teacat/chaturbate-dvr/channel"
-	"github.com/teacat/chaturbate-dvr/entity"
-	"github.com/teacat/chaturbate-dvr/notifier"
-	"github.com/teacat/chaturbate-dvr/router/view"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/channel"
+	"github.com/HeapOfChaos/goondvr/entity"
+	"github.com/HeapOfChaos/goondvr/notifier"
+	"github.com/HeapOfChaos/goondvr/router/view"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // Manager is responsible for managing channels and their states.
@@ -76,6 +76,7 @@ type settings struct {
 	CFGlobalThreshold   int    `json:"cf_global_threshold,omitempty"`
 	NotifyCooldownHours int    `json:"notify_cooldown_hours,omitempty"`
 	NotifyStreamOnline  bool   `json:"notify_stream_online,omitempty"`
+	StripchatPDKey      string `json:"stripchat_pdkey,omitempty"`
 }
 
 // SaveSettings persists the current cookies and user-agent to disk.
@@ -93,6 +94,7 @@ func SaveSettings() error {
 		CFGlobalThreshold:   server.Config.CFGlobalThreshold,
 		NotifyCooldownHours: server.Config.NotifyCooldownHours,
 		NotifyStreamOnline:  server.Config.NotifyStreamOnline,
+		StripchatPDKey:      server.Config.StripchatPDKey,
 	}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -152,6 +154,9 @@ func LoadSettings() error {
 	server.Config.NotifyCooldownHours = s.NotifyCooldownHours
 	if server.Config.NotifyCooldownHours <= 0 {
 		server.Config.NotifyCooldownHours = 4
+	}
+	if s.StripchatPDKey != "" {
+		server.Config.StripchatPDKey = s.StripchatPDKey
 	}
 	return nil
 }
@@ -332,6 +337,17 @@ func (m *Manager) GetChannelThumb(username string) string {
 		return ""
 	}
 	return val.(*channel.Channel).SummaryCardImage
+}
+
+// GetChannelLiveThumb returns the live-updating thumbnail URL for the given username.
+// For Stripchat this is the doppiocdn snapshot URL; for Chaturbate it returns empty
+// (the JS handles Chaturbate live thumbs via mmcdn directly).
+func (m *Manager) GetChannelLiveThumb(username string) string {
+	val, ok := m.Channels.Load(username)
+	if !ok {
+		return ""
+	}
+	return val.(*channel.Channel).LiveThumbURL
 }
 
 // Shutdown gracefully stops all active channels, saves config, and waits for

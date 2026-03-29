@@ -58,6 +58,8 @@ type ChannelInfo struct {
 	NumViewers       int
 	EdgeRegion       string
 	SummaryCardImage string
+	LiveThumbURL     string // live-updating thumbnail; empty = use platform default
+	Site             string // "chaturbate" (default) or "stripchat"
 	SiteDomain       string // pre-computed site URL, e.g. "https://chaturbate.com/" or "https://stripchat.com/"
 }
 
@@ -90,4 +92,5 @@ type Config struct {
 	CFGlobalThreshold   int // channels hitting CF in same window for global alert; default 3
 	NotifyCooldownHours int // hours between repeated alerts of the same type; default 4
 	NotifyStreamOnline  bool
+	StripchatPDKey      string // MOUFLON v2 decryption key; auto-extracted or manual override
 }

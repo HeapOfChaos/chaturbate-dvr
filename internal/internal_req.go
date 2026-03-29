@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HeapOfChaos/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // Req represents an HTTP client with customized settings.
 type Req struct {
 	client  *http.Client
-	isMedia bool // when true, omits browser-spoofing headers not needed for CDN media requests
+	isMedia bool   // when true, omits browser-spoofing headers not needed for CDN media requests
+	referer string // CDN Referer/Origin override; only used when isMedia is true
 }
 
 // NewReq creates a new HTTP client for Chaturbate page requests.
@@ -36,6 +37,18 @@ func NewMediaReq() *Req {
 			Transport: CreateTransport(),
 		},
 		isMedia: true,
+	}
+}
+
+// NewMediaReqWithReferer creates a media HTTP client that sends the given URL as
+// Referer and Origin instead of the Chaturbate defaults. Use this for non-Chaturbate CDNs.
+func NewMediaReqWithReferer(referer string) *Req {
+	return &Req{
+		client: &http.Client{
+			Transport: CreateTransport(),
+		},
+		isMedia: true,
+		referer: referer,
 	}
 }
 
@@ -74,6 +87,14 @@ func (h *Req) GetBytes(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("client do: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if server.Config.Debug && resp.StatusCode >= 400 {
+		fmt.Printf("[DEBUG] HTTP %d: %s\n", resp.StatusCode, req.URL)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -152,9 +173,12 @@ func (h *Req) DoRequest(req *http.Request) (string, error) {
 // SetRequestHeaders applies necessary headers to the request.
 func (h *Req) SetRequestHeaders(req *http.Request) {
 	if h.isMedia {
-		// Referer satisfies CDN hotlink protection on mmcdn.com media requests.
-		req.Header.Set("Referer", "https://chaturbate.com/")
-		req.Header.Set("Origin", "https://chaturbate.com")
+		ref := h.referer
+		if ref == "" {
+			ref = "https://chaturbate.com/"
+		}
+		req.Header.Set("Referer", ref)
+		req.Header.Set("Origin", strings.TrimRight(ref, "/"))
 	} else {
 		// X-Requested-With helps bypass Cloudflare on chaturbate.com page fetches.
 		// Do NOT send it to CDN media hosts (mmcdn.com) as it may cause rejection.

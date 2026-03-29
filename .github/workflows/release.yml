@@ -26,10 +26,10 @@ jobs:
         run: |
           mkdir -p dist
 
-          GOOS=linux   GOARCH=amd64  go build -ldflags="-s -w" -o dist/linux_amd64_chaturbate-dvr .
-          GOOS=windows GOARCH=amd64  go build -ldflags="-s -w" -o dist/windows_amd64_chaturbate-dvr.exe .
-          GOOS=darwin  GOARCH=amd64  go build -ldflags="-s -w" -o dist/darwin_amd64_chaturbate-dvr .
-          GOOS=darwin  GOARCH=arm64  go build -ldflags="-s -w" -o dist/darwin_arm64_chaturbate-dvr .
+          GOOS=linux   GOARCH=amd64  go build -ldflags="-s -w" -o dist/linux_amd64_goondvr .
+          GOOS=windows GOARCH=amd64  go build -ldflags="-s -w" -o dist/windows_amd64_goondvr.exe .
+          GOOS=darwin  GOARCH=amd64  go build -ldflags="-s -w" -o dist/darwin_amd64_goondvr .
+          GOOS=darwin  GOARCH=arm64  go build -ldflags="-s -w" -o dist/darwin_arm64_goondvr .
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -54,5 +54,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/heapofchaos/chaturbate-dvr:latest
-            ghcr.io/heapofchaos/chaturbate-dvr:${{ github.ref_name }}
+            ghcr.io/heapofchaos/goondvr:latest
+            ghcr.io/heapofchaos/goondvr:${{ github.ref_name }}

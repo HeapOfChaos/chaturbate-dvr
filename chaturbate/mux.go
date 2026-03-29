@@ -515,6 +515,89 @@ func shiftSegmentTfdt(data []byte, trackID uint32, base uint64) []byte {
 	return result
 }
 
+// shiftSegmentAllTracks returns a copy of data with tfdt normalised for ALL
+// tracks using the provided base time map. Use this for muxed fMP4 segments
+// (e.g. Stripchat) where video and audio share a single segment file.
+func shiftSegmentAllTracks(data []byte, baseTimes map[uint32]uint64) []byte {
+	if len(baseTimes) == 0 {
+		return data
+	}
+	result := make([]byte, len(data))
+	copy(result, data)
+	normaliseTfdt(result, baseTimes)
+	return result
+}
+
+// extractAllTrackBaseTimes returns the tfdt base times for every traf in the
+// first moof box. Returns nil if no moof/traf/tfdt is found.
+func extractAllTrackBaseTimes(data []byte) map[uint32]uint64 {
+	pos := 0
+	for pos+8 <= len(data) {
+		size := int(binary.BigEndian.Uint32(data[pos:]))
+		if size < 8 || pos+size > len(data) {
+			break
+		}
+		if string(data[pos+4:pos+8]) == "moof" {
+			return extractMoofTrackTimes(data[pos+8 : pos+size])
+		}
+		pos += size
+	}
+	return nil
+}
+
+// extractMoofTrackTimes iterates over all traf boxes inside a moof and returns
+// a map of track_id -> baseMediaDecodeTime.
+func extractMoofTrackTimes(moofContent []byte) map[uint32]uint64 {
+	result := map[uint32]uint64{}
+	inner := 0
+	for inner+8 <= len(moofContent) {
+		innerSize := int(binary.BigEndian.Uint32(moofContent[inner:]))
+		if innerSize < 8 || inner+innerSize > len(moofContent) {
+			break
+		}
+		if string(moofContent[inner+4:inner+8]) == "traf" {
+			trafContent := moofContent[inner+8 : inner+innerSize]
+			tid, dt := extractTrafTrackAndTfdt(trafContent)
+			if tid != 0 {
+				result[tid] = dt
+			}
+		}
+		inner += innerSize
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// extractTrafTrackAndTfdt reads the track_id from tfhd and baseMediaDecodeTime
+// from tfdt inside a single traf box.
+func extractTrafTrackAndTfdt(trafContent []byte) (uint32, uint64) {
+	var trackID uint32
+	var decodeTime uint64
+	pos := 0
+	for pos+8 <= len(trafContent) {
+		size := int(binary.BigEndian.Uint32(trafContent[pos:]))
+		if size < 8 || pos+size > len(trafContent) {
+			break
+		}
+		boxType := string(trafContent[pos+4 : pos+8])
+		if boxType == "tfhd" && pos+16 <= len(trafContent) {
+			trackID = binary.BigEndian.Uint32(trafContent[pos+12:])
+		}
+		if boxType == "tfdt" && size >= 16 {
+			version := trafContent[pos+8]
+			if version == 1 && size >= 20 {
+				decodeTime = binary.BigEndian.Uint64(trafContent[pos+12:])
+			} else {
+				decodeTime = uint64(binary.BigEndian.Uint32(trafContent[pos+12:]))
+			}
+		}
+		pos += size
+	}
+	return trackID, decodeTime
+}
+
 // normaliseTrafTfdt reads track_id from the tfhd box inside a traf, then
 // subtracts minTimes[track_id] from the baseMediaDecodeTime in the tfdt box.
 // trafContent is a slice of the parent data buffer, so edits are in-place.

@@ -3,7 +3,7 @@ package site
 import (
 	"context"
 
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
+	"github.com/HeapOfChaos/goondvr/internal"
 )
 
 // StreamInfo holds live stream data returned by a site when a channel is online.
@@ -13,6 +13,9 @@ type StreamInfo struct {
 	Gender           string
 	NumViewers       int
 	SummaryCardImage string
+	LiveThumbURL     string // live-updating thumbnail URL; empty = use platform default (e.g. mmcdn)
+	CDNReferer       string // Referer/Origin to use for CDN media requests; empty defaults to Chaturbate
+	MouflonPDKey     string // Stripchat MOUFLON v2 decryption key; empty if not applicable
 }
 
 // Site defines the interface a streaming platform must implement.

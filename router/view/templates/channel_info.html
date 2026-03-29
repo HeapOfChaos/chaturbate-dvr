@@ -3,7 +3,7 @@
 <!-- Expanded View -->
 <div class="view-expanded">
     {{ if or .IsOnline .SummaryCardImage }}
-    <div class="img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
+    <div class="img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}" data-site="{{ .Site }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
         <div class="channel-thumb-img"><div class="thumb-layer"></div><div class="thumb-layer"></div></div>
         {{ if .SummaryCardImage }}
         <div class="img-switcher-bar">
@@ -124,7 +124,7 @@
 <!-- Grid View -->
 <div class="view-grid">
     {{ if or .IsOnline .SummaryCardImage }}
-    <div class="img-switcher grid-img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
+    <div class="img-switcher grid-img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}" data-site="{{ .Site }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
         <div class="channel-thumb-img"><div class="thumb-layer"></div><div class="thumb-layer"></div></div>
         {{ if .SummaryCardImage }}
         <div class="img-switcher-bar">
@@ -180,7 +180,7 @@
 <!-- Collapsed View -->
 <div class="view-collapsed">
     {{ if or .IsOnline .SummaryCardImage }}
-    <div class="img-switcher collapsed-img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
+    <div class="img-switcher collapsed-img-switcher" data-username="{{ .Username }}" data-online="{{ .IsOnline }}" data-site="{{ .Site }}"{{ if .SummaryCardImage }} data-has-card="1"{{ end }}>
         <div class="channel-thumb-img"><div class="thumb-layer"></div><div class="thumb-layer"></div></div>
     </div>
     {{ else }}

@@ -7,33 +7,27 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/teacat/chaturbate-dvr/config"
-	"github.com/teacat/chaturbate-dvr/entity"
-	"github.com/teacat/chaturbate-dvr/manager"
-	"github.com/teacat/chaturbate-dvr/router"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/config"
+	"github.com/HeapOfChaos/goondvr/entity"
+	"github.com/HeapOfChaos/goondvr/manager"
+	"github.com/HeapOfChaos/goondvr/router"
+	"github.com/HeapOfChaos/goondvr/server"
 	"github.com/urfave/cli/v2"
 )
 
 const logo = `
- ██████╗██╗  ██╗ █████╗ ████████╗██╗   ██╗██████╗ ██████╗  █████╗ ████████╗███████╗
-██╔════╝██║  ██║██╔══██╗╚══██╔══╝██║   ██║██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔════╝
-██║     ███████║███████║   ██║   ██║   ██║██████╔╝██████╔╝███████║   ██║   █████╗
-██║     ██╔══██║██╔══██║   ██║   ██║   ██║██╔══██╗██╔══██╗██╔══██║   ██║   ██╔══╝
-╚██████╗██║  ██║██║  ██║   ██║   ╚██████╔╝██║  ██║██████╔╝██║  ██║   ██║   ███████╗
- ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝
-██████╗ ██╗   ██╗██████╗
-██╔══██╗██║   ██║██╔══██╗
-██║  ██║██║   ██║██████╔╝
-██║  ██║╚██╗ ██╔╝██╔══██╗
-██████╔╝ ╚████╔╝ ██║  ██║
-╚═════╝   ╚═══╝  ╚═╝  ╚═╝`
+ ██████╗  ██████╗  ██████╗ ███╗   ██╗██████╗ ██╗   ██╗██████╗
+██╔════╝ ██╔═══██╗██╔═══██╗████╗  ██║██╔══██╗██║   ██║██╔══██╗
+██║  ███╗██║   ██║██║   ██║██╔██╗ ██║██║  ██║██║   ██║██████╔╝
+██║   ██║██║   ██║██║   ██║██║╚██╗██║██║  ██║╚██╗ ██╔╝██╔══██╗
+╚██████╔╝╚██████╔╝╚██████╔╝██║ ╚████║██████╔╝ ╚████╔╝ ██║  ██║
+ ╚═════╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝╚═════╝   ╚═══╝  ╚═╝  ╚═╝`
 
 func main() {
 	app := &cli.App{
-		Name:    "chaturbate-dvr",
-		Version: "2.3.0",
-		Usage:   "Record your favorite Chaturbate streams automatically. 😎🫵",
+		Name:    "goondvr",
+		Version: "3.0.0",
+		Usage:   "Record your favorite streams automatically. 😎🫵",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "username",
@@ -106,6 +100,11 @@ func main() {
 				Name:  "debug",
 				Usage: "Write full HTML response to a temp file when stream detection fails",
 				Value: false,
+			},
+			&cli.StringFlag{
+				Name:  "stripchat-pdkey",
+				Usage: "Stripchat MOUFLON v2 decryption key (auto-extracted if omitted)",
+				Value: "",
 			},
 		},
 		Action: start,

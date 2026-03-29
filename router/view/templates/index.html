@@ -14,7 +14,7 @@
         <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
         <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
         <link rel="manifest" href="/static/site.webmanifest">
-        <title>Chaturbate DVR</title>
+        <title>GoondVR</title>
         <style>
             /* View mode: grid and collapsed hidden by default (expanded is default) */
             .view-grid, .view-collapsed { display: none; }
@@ -82,7 +82,7 @@
             <!-- Header -->
             <div class="ts-grid is-bottom-aligned">
                 <div class="column is-fluid">
-                    <div class="ts-header is-huge is-uppercased is-heavy has-leading-small">Chaturbate DVR</div>
+                    <div class="ts-header is-huge is-uppercased is-heavy has-leading-small">GoondVR</div>
                     <div class="ts-meta">
                         <div class="item">
                             <span class="ts-text is-description is-bold">VERSION {{ .Config.Version }}</span>
@@ -212,7 +212,7 @@
                                 <div class="ts-input">
                                     <textarea name="cookies" rows="5">{{ .Config.Cookies }}</textarea>
                                 </div>
-                                <div class="ts-text is-description has-top-spaced-small">Use semicolons to separate multiple cookies, e.g., "key1=value1; key2=value2". See <a class="ts-text is-link" href="https://github.com/teacat/chaturbate-dvr/?tab=readme-ov-file#-cookies--user-agent" target="_blank">README</a> for details.</div>
+                                <div class="ts-text is-description has-top-spaced-small">Use semicolons to separate multiple cookies, e.g., "key1=value1; key2=value2". See <a class="ts-text is-link" href="https://github.com/teacat/goondvr/?tab=readme-ov-file#-cookies--user-agent" target="_blank">README</a> for details.</div>
                             </div>
                         </div>
                         <!-- / Cookies -->
@@ -446,7 +446,7 @@
                                     <input type="text" name="pattern" value="{{ .Config.Pattern }}" />
                                 </div>
                                 <div class="ts-text is-description has-top-spaced-small">
-                                    See the <a class="ts-text is-external-link is-link" href="https://github.com/teacat/chaturbate-dvr" target="_blank">README</a> for details.
+                                    See the <a class="ts-text is-external-link is-link" href="https://github.com/teacat/goondvr" target="_blank">README</a> for details.
                                 </div>
                             </div>
                         </div>
@@ -496,7 +496,10 @@
         <!-- / Create Dialog -->
 
         <script>
-            const LIVE_THUMB_URL = username => `https://thumb.live.mmcdn.com/riw/${username}.jpg`;
+            const LIVE_THUMB_URL = (username, site) => {
+                if (site === 'stripchat') return `/live-thumb/${username}`;
+                return `https://thumb.live.mmcdn.com/riw/${username}.jpg`;
+            };
             const CARD_THUMB_URL = username => `/thumb/${username}`;
 
             // Stores the last successfully loaded live URL per username.
@@ -527,6 +530,7 @@
             // refresh=false (SSE re-init) reuses the cached URL to avoid hammering the CDN.
             function applyThumbMode(switcher, mode, refresh) {
                 const username = switcher.dataset.username;
+                const site = switcher.dataset.site || 'chaturbate';
                 const hasCard = switcher.dataset.hasCard === '1';
                 const el = switcher.querySelector('.channel-thumb-img');
                 if (!el) return;
@@ -536,7 +540,7 @@
                     if (!refresh && liveThumbCache[username]) {
                         src = liveThumbCache[username];
                     } else {
-                        src = LIVE_THUMB_URL(username) + '?' + Date.now();
+                        src = LIVE_THUMB_URL(username, site) + '?' + Date.now();
                         liveThumbCache[username] = src;
                     }
                 } else {

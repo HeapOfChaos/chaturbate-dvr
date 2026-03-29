@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/HeapOfChaos/chaturbate-dvr/entity"
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
-	"github.com/HeapOfChaos/chaturbate-dvr/manager"
-	"github.com/HeapOfChaos/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/entity"
+	"github.com/HeapOfChaos/goondvr/internal"
+	"github.com/HeapOfChaos/goondvr/manager"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // IndexData represents the data structure for the index page.
@@ -106,6 +106,27 @@ func ThumbProxy(c *gin.Context) {
 	}
 
 	req := internal.NewMediaReq()
+	imgBytes, err := req.GetBytes(c.Request.Context(), imgURL)
+	if err != nil {
+		c.Status(http.StatusBadGateway)
+		return
+	}
+
+	contentType := http.DetectContentType(imgBytes)
+	c.Data(http.StatusOK, contentType, imgBytes)
+}
+
+// LiveThumbProxy proxies the channel's live-updating thumbnail from the CDN.
+// For Stripchat this uses img.doppiocdn.net; for Chaturbate it falls back to
+// the summary card image (the JS handles Chaturbate live thumbs directly).
+func LiveThumbProxy(c *gin.Context) {
+	imgURL := server.Manager.GetChannelLiveThumb(c.Param("username"))
+	if imgURL == "" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	req := internal.NewMediaReqWithReferer("https://stripchat.com/")
 	imgBytes, err := req.GetBytes(c.Request.Context(), imgURL)
 	if err != nil {
 		c.Status(http.StatusBadGateway)

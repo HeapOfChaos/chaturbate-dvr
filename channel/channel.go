@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HeapOfChaos/chaturbate-dvr/entity"
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
-	"github.com/HeapOfChaos/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/entity"
+	"github.com/HeapOfChaos/goondvr/internal"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // Channel represents a channel instance.
@@ -31,6 +31,7 @@ type Channel struct {
 	NumViewers          int
 	EdgeRegion          string
 	SummaryCardImage    string
+	LiveThumbURL        string
 	CFBlockCount        int
 
 	logsMu sync.RWMutex
@@ -131,6 +132,11 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 		siteDomain = "https://stripchat.com/"
 	}
 
+	site := ch.Config.Site
+	if site == "" {
+		site = "chaturbate"
+	}
+
 	return &entity.ChannelInfo{
 		IsOnline:         ch.IsOnline,
 		IsPaused:         ch.Config.IsPaused,
@@ -150,6 +156,8 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 		NumViewers:       ch.NumViewers,
 		EdgeRegion:       ch.EdgeRegion,
 		SummaryCardImage: ch.SummaryCardImage,
+		LiveThumbURL:     ch.LiveThumbURL,
+		Site:             site,
 		SiteDomain:       siteDomain,
 	}
 }

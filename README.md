@@ -1,6 +1,6 @@
-# Chaturbate DVR
+# GoondVR
 
-A tool to record **multiple** Chaturbate streams. Supports macOS, Windows, Linux, and Docker. Favicon from [Twemoji](https://github.com/twitter/twemoji).
+A tool to record **multiple** streams from Chaturbate, Stripchat, and more. Supports macOS, Windows, Linux, and Docker. Favicon from [Twemoji](https://github.com/twitter/twemoji).
 
 ![Image](https://github.com/user-attachments/assets/d71f0aaa-e821-4371-9f48-658a137b42b6)
 
@@ -10,7 +10,7 @@ A tool to record **multiple** Chaturbate streams. Supports macOS, Windows, Linux
 
 # Getting Started
 
-Go to the [📦 Releases page](https://github.com/HeapOfChaos/chaturbate-dvr/releases) and download the appropriate binary. (e.g., `windows_amd64_chaturbate-dvr.exe`)
+Go to the [📦 Releases page](https://github.com/HeapOfChaos/goondvr/releases) and download the appropriate binary. (e.g., `windows_amd64_goondvr.exe`)
 
 &nbsp;
 
@@ -18,16 +18,16 @@ Go to the [📦 Releases page](https://github.com/HeapOfChaos/chaturbate-dvr/rel
 
 ```bash
 # Windows
-$ windows_amd64_chaturbate-dvr.exe
+$ windows_amd64_goondvr.exe
 
 # macOS (Intel)
-$ ./darwin_amd64_chaturbate-dvr
+$ ./darwin_amd64_goondvr
 
 # macOS (Apple Silicon)
-$ ./darwin_arm64_chaturbate-dvr
+$ ./darwin_arm64_goondvr
 
 # Linux
-$ ./linux_amd64_chaturbate-dvr
+$ ./linux_amd64_goondvr
 ```
 
 Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
@@ -38,16 +38,16 @@ Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
 
 ```bash
 # Windows
-$ windows_amd64_chaturbate-dvr.exe -u CHANNEL_USERNAME
+$ windows_amd64_goondvr.exe -u CHANNEL_USERNAME
 
 # macOS (Intel)
-$ ./darwin_amd64_chaturbate-dvr -u CHANNEL_USERNAME
+$ ./darwin_amd64_goondvr -u CHANNEL_USERNAME
 
 # macOS (Apple Silicon)
-$ ./darwin_arm64_chaturbate-dvr -u CHANNEL_USERNAME
+$ ./darwin_arm64_goondvr -u CHANNEL_USERNAME
 
 # Linux
-$ ./linux_amd64_chaturbate-dvr -u CHANNEL_USERNAME
+$ ./linux_amd64_goondvr -u CHANNEL_USERNAME
 ```
 
 This starts recording immediately. The Web UI will be disabled.
@@ -56,7 +56,7 @@ This starts recording immediately. The Web UI will be disabled.
 
 ## 🐳 Running with Docker
 
-Pre-built image from [GitHub Container Registry](https://github.com/HeapOfChaos/chaturbate-dvr/pkgs/container/chaturbate-dvr):
+Pre-built image from [GitHub Container Registry](https://github.com/HeapOfChaos/goondvr/pkgs/container/goondvr):
 
 ```bash
 # Run the container and save videos to ./videos
@@ -66,14 +66,14 @@ $ docker run -d \
     -p 8080:8080 \
     -v "./videos:/usr/src/app/videos" \
     -v "./conf:/usr/src/app/conf" \
-    ghcr.io/heapofchaos/chaturbate-dvr:latest
+    ghcr.io/heapofchaos/goondvr:latest
 ```
 
 ...Or build your own image using the Dockerfile in this repository.
 
 ```bash
 # Build the image
-$ docker build -t chaturbate-dvr .
+$ docker build -t goondvr .
 
 # Run the container and save videos to ./videos
 $ docker run -d \
@@ -82,10 +82,10 @@ $ docker run -d \
     -p 8080:8080 \
     -v "./videos:/usr/src/app/videos" \
     -v "./conf:/usr/src/app/conf" \
-    chaturbate-dvr
+    goondvr
 ```
 
-...Or use [`docker-compose.yml`](https://github.com/HeapOfChaos/chaturbate-dvr/blob/master/docker-compose.yml):
+...Or use [`docker-compose.yml`](https://github.com/HeapOfChaos/goondvr/blob/master/docker-compose.yml):
 
 ```bash
 $ docker compose up -d
@@ -122,16 +122,16 @@ Available options:
 
 ```bash
 # Record at 720p / 60fps
-$ ./chaturbate-dvr -u yamiodymel -resolution 720 -framerate 60
+$ ./goondvr -u yamiodymel -resolution 720 -framerate 60
 
 # Split every 30 minutes
-$ ./chaturbate-dvr -u yamiodymel -max-duration 30
+$ ./goondvr -u yamiodymel -max-duration 30
 
 # Split at 1024 MB
-$ ./chaturbate-dvr -u yamiodymel -max-filesize 1024
+$ ./goondvr -u yamiodymel -max-filesize 1024
 
 # Custom filename format
-$ ./chaturbate-dvr -u yamiodymel \
+$ ./goondvr -u yamiodymel \
     -pattern "video/{{.Username}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}-{{.Minute}}-{{.Second}}_{{.Sequence}}"
 ```
 
@@ -162,7 +162,7 @@ _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=val
 3. User-Agent can be found using [WhatIsMyBrowser](https://www.whatismybrowser.com/detect/what-is-my-user-agent/), now run with `-cookies` and `-user-agent`:
 
     ```bash
-    $ ./chaturbate-dvr -u yamiodymel \
+    $ ./goondvr -u yamiodymel \
         -cookies "cf_clearance=PASTE_YOUR_CF_CLEARANCE_HERE" \
         -user-agent "PASTE_YOUR_USER_AGENT_HERE"
     ```
@@ -170,7 +170,7 @@ _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=val
     Example:
 
     ```bash
-    $ ./chaturbate-dvr -u yamiodymel \
+    $ ./goondvr -u yamiodymel \
         -cookies "cf_clearance=i975JyJSMZUuEj2kIqfaClPB2dLomx3.iYo6RO1IIRg-1746019135-1.2.1.1-2CX..." \
         -user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
     ```
@@ -186,7 +186,7 @@ _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=val
 3. Run with `-cookies`:
 
     ```bash
-    $ ./chaturbate-dvr -u yamiodymel -cookies "sessionid=PASTE_YOUR_SESSIONID_HERE"
+    $ ./goondvr -u yamiodymel -cookies "sessionid=PASTE_YOUR_SESSIONID_HERE"
     ```
 
 &nbsp;
@@ -230,7 +230,7 @@ _Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams are saved as `.mp4`
 
 **Q: The program closes immediately on Windows.**
 
-> Open it via **Command Prompt**, the error message should appear. If needed, [create an issue](https://github.com/HeapOfChaos/chaturbate-dvr/issues).
+> Open it via **Command Prompt**, the error message should appear. If needed, [create an issue](https://github.com/HeapOfChaos/goondvr/issues).
 
 &nbsp;
 
@@ -264,5 +264,5 @@ _Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams are saved as `.mp4`
 > Yes. You can launch the program using the `HTTPS_PROXY` environment variable:
 >
 > ```bash
-> $ HTTPS_PROXY="socks5://127.0.0.1:9050" ./chaturbate-dvr -u CHANNEL_USERNAME
+> $ HTTPS_PROXY="socks5://127.0.0.1:9050" ./goondvr -u CHANNEL_USERNAME
 > ```

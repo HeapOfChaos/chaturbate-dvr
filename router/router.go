@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/teacat/chaturbate-dvr/router/view"
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/router/view"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // SetupRouter initializes and returns the Gin router.
@@ -41,6 +41,7 @@ var silentPaths = []string{
 	"/api/stats",
 	"/updates",
 	"/thumb/",
+	"/live-thumb/",
 	"/static/",
 }
 
@@ -94,6 +95,7 @@ func SetupViews(r *gin.Engine) {
 	r.GET("/", Index)
 	r.GET("/updates", Updates)
 	r.GET("/thumb/:username", ThumbProxy)
+	r.GET("/live-thumb/:username", LiveThumbProxy)
 	r.POST("/update_config", UpdateConfig)
 	r.POST("/create_channel", CreateChannel)
 	r.POST("/stop_channel/:username", StopChannel)

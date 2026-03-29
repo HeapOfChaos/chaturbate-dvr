@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/teacat/chaturbate-dvr/chaturbate"
+	"github.com/HeapOfChaos/goondvr/chaturbate"
 )
 
 // Pattern holds the date/time and sequence information for the filename pattern

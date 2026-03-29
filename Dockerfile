@@ -4,12 +4,12 @@ WORKDIR /workspace
 ENV GOTOOLCHAIN=local
 
 COPY ./ ./
-RUN go build -ldflags="-s -w" -o chaturbate-dvr .
+RUN go build -ldflags="-s -w" -o goondvr .
 
 FROM alpine:3 AS runnable
 RUN apk --no-cache add ca-certificates
 WORKDIR /usr/src/app
 
-COPY --from=builder /workspace/chaturbate-dvr /chaturbate-dvr
+COPY --from=builder /workspace/goondvr /goondvr
 
-ENTRYPOINT ["/chaturbate-dvr"]
+ENTRYPOINT ["/goondvr"]

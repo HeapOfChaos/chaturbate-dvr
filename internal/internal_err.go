@@ -13,4 +13,5 @@ var (
 	ErrRoomPasswordRequired  = errors.New("room requires a password")
 	ErrPaused            = errors.New("channel paused")
 	ErrStopped           = errors.New("channel stopped")
+	ErrNotFound          = errors.New("segment not found (404)")
 )

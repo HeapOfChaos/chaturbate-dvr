@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/teacat/chaturbate-dvr/server"
+	"github.com/HeapOfChaos/goondvr/server"
 )
 
 // Cooldown key helpers — use these to build consistent keys.

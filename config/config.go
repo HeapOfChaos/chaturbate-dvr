@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/teacat/chaturbate-dvr/entity"
+	"github.com/HeapOfChaos/goondvr/entity"
 	"github.com/urfave/cli/v2"
 )
 
@@ -22,6 +22,7 @@ func New(c *cli.Context) (*entity.Config, error) {
 		Cookies:       c.String("cookies"),
 		UserAgent:     c.String("user-agent"),
 		Domain:        c.String("domain"),
-		Debug:         c.Bool("debug"),
+		Debug:          c.Bool("debug"),
+		StripchatPDKey: c.String("stripchat-pdkey"),
 	}, nil
 }

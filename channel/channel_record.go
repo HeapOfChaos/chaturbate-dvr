@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/HeapOfChaos/chaturbate-dvr/chaturbate"
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
-	"github.com/HeapOfChaos/chaturbate-dvr/notifier"
-	"github.com/HeapOfChaos/chaturbate-dvr/server"
-	"github.com/HeapOfChaos/chaturbate-dvr/site"
-	"github.com/HeapOfChaos/chaturbate-dvr/stripchat"
+	"github.com/HeapOfChaos/goondvr/chaturbate"
+	"github.com/HeapOfChaos/goondvr/internal"
+	"github.com/HeapOfChaos/goondvr/notifier"
+	"github.com/HeapOfChaos/goondvr/server"
+	"github.com/HeapOfChaos/goondvr/site"
+	"github.com/HeapOfChaos/goondvr/stripchat"
 )
 
 // resolveSite returns the site.Site implementation for the given site name.
@@ -186,8 +186,9 @@ func (ch *Channel) RecordStream(ctx context.Context, s site.Site, req *internal.
 	_ = server.Manager.SaveConfig()
 	ch.Sequence = 0
 	ch.NumViewers = streamInfo.NumViewers
+	ch.LiveThumbURL = streamInfo.LiveThumbURL
 
-	playlist, err := chaturbate.FetchPlaylist(ctx, streamInfo.HLSURL, ch.Config.Resolution, ch.Config.Framerate)
+	playlist, err := chaturbate.FetchPlaylist(ctx, streamInfo.HLSURL, ch.Config.Resolution, ch.Config.Framerate, streamInfo.CDNReferer, streamInfo.MouflonPDKey)
 	if err != nil {
 		return fmt.Errorf("get playlist: %w", err)
 	}
@@ -224,6 +225,8 @@ func (ch *Channel) RecordStream(ctx context.Context, s site.Site, req *internal.
 	if playlist.FileExt == ".mp4" {
 		if playlist.AudioPlaylistURL != "" {
 			streamType = "LL-HLS (video+audio)"
+		} else if playlist.MouflonPDKey != "" {
+			streamType = "HLS (fMP4)"
 		} else {
 			streamType = "LL-HLS (video only)"
 		}

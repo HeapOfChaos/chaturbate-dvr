@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/HeapOfChaos/chaturbate-dvr/internal"
-	"github.com/HeapOfChaos/chaturbate-dvr/site"
+	"github.com/HeapOfChaos/goondvr/internal"
+	"github.com/HeapOfChaos/goondvr/site"
 )
 
 // Stripchat implements site.Site for the Stripchat platform.
@@ -20,8 +20,9 @@ func New() *Stripchat {
 // camResponse is the relevant subset of the Stripchat cam API response.
 type camResponse struct {
 	Cam struct {
-		StreamName        string `json:"streamName"`
-		IsCamActive       bool   `json:"isCamActive"`
+		StreamName        string            `json:"streamName"`
+		IsCamActive       bool              `json:"isCamActive"`
+		ViewServers       map[string]string `json:"viewServers"`
 		BroadcastSettings struct {
 			BroadcastType string `json:"broadcastType"`
 		} `json:"broadcastSettings"`
@@ -92,17 +93,45 @@ func (s *Stripchat) FetchStream(ctx context.Context, req *internal.Req, username
 	}
 
 	streamName := resp.Cam.StreamName
-	hlsURL := fmt.Sprintf(
-		"https://edge-hls.doppiocdn.net/hls/%s/master/%s_auto.m3u8?playlistType=lowLatency",
-		streamName, streamName,
-	)
 
+	// Prefer the flashphoner-hls CDN server URL — this is a standard HLS master
+	// playlist that does not use MOUFLON encryption. Fall back to the LL-HLS
+	// edge-hls URL (which requires MOUFLON decryption) if viewServers is absent.
+	var hlsURL string
+	if server, ok := resp.Cam.ViewServers["flashphoner-hls"]; ok && server != "" {
+		hlsURL = fmt.Sprintf(
+			"https://b-%s.doppiocdn.com/hls/%s/master_%s.m3u8",
+			server, streamName, streamName,
+		)
+	} else {
+		hlsURL = fmt.Sprintf(
+			"https://edge-hls.doppiocdn.net/hls/%s/master/%s_auto.m3u8?playlistType=lowLatency",
+			streamName, streamName,
+		)
+	}
+
+	// Build a live-updating thumbnail URL from snapshotTimestamp + streamName.
+	// Pattern: https://img.doppiocdn.net/thumbs/{snapshotTimestamp}/{streamName}
+	var liveThumbURL string
+	if u.SnapshotTimestamp > 0 && streamName != "" {
+		liveThumbURL = fmt.Sprintf(
+			"https://img.doppiocdn.net/thumbs/%d/%s",
+			u.SnapshotTimestamp, streamName,
+		)
+	}
+
+	// MouflonPDKey is resolved later in FetchPlaylist once we have the pkey
+	// from the master playlist's #EXT-X-MOUFLON:PSCH:v2:{pkey} line.
+	// Pass "auto" to signal that FetchPlaylist should resolve it.
 	return &site.StreamInfo{
 		HLSURL:           hlsURL,
 		RoomTitle:        resp.Cam.Topic,
 		Gender:           mapGender(u.BroadcastGender),
 		NumViewers:       0,
 		SummaryCardImage: u.PreviewUrlThumbBig,
+		LiveThumbURL:     liveThumbURL,
+		CDNReferer:       "https://stripchat.com/",
+		MouflonPDKey:     "auto",
 	}, nil
 }
 

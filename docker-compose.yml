@@ -1,7 +1,7 @@
 services:
-  chaturbate-dvr:
-    image: ghcr.io/heapofchaos/chaturbate-dvr:latest
-    container_name: chaturbate-dvr
+  goondvr:
+    image: ghcr.io/heapofchaos/goondvr:latest
+    container_name: goondvr
     ports:
       - 8080:8080
     volumes:
