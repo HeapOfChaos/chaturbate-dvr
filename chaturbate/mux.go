@@ -345,12 +345,23 @@ type tfraEntry struct {
 	offset uint64 // byte offset of the moof box from start of file
 }
 
+// tfdtPatch records where a tfdt time value lives in the file so it can be
+// rewritten in-place without loading the entire file into memory.
+type tfdtPatch struct {
+	fileOffset int64  // absolute file offset of the time field (4 or 8 bytes)
+	version    byte   // 0 = 32-bit, 1 = 64-bit
+	trackID    uint32 // which track this tfdt belongs to
+}
+
 // BuildSeekIndex scans a completed fragmented MP4 file, normalises tfdt
 // decode times to start from zero (so VLC displays correct timestamps
 // instead of the live-stream's wall-clock offset, e.g. "44:00"), builds an
 // mfra (Movie Fragment Random Access) box containing tfra entries for every
 // moof fragment, and appends it to the file.  It is a no-op if the file
 // already has an mfra box or contains no moof boxes.
+//
+// The scan is streaming: only one moof box is held in memory at a time,
+// so memory usage is O(number of fragments), not O(file size).
 func BuildSeekIndex(path string) error {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
@@ -358,50 +369,57 @@ func BuildSeekIndex(path string) error {
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(f)
+	fileSize, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
-		return fmt.Errorf("read: %w", err)
+		return fmt.Errorf("seek end: %w", err)
 	}
-	if len(data) == 0 {
-		return nil
-	}
-
-	// Already indexed - nothing to do.
-	if _, has := findMP4Box(data, "mfra"); has {
+	if fileSize == 0 {
 		return nil
 	}
 
 	trackEntries := map[uint32][]tfraEntry{} // track_id -> entries
+	var patches []tfdtPatch
 
-	// Walk top-level boxes to find every moof and its byte offset.
-	pos := 0
-	for pos+8 <= len(data) {
-		size := int(binary.BigEndian.Uint32(data[pos:]))
-		if size < 8 || pos+size > len(data) {
+	// Pass 1: walk top-level boxes by reading 8-byte headers and seeking.
+	// Only moof boxes are read into memory (typically a few KB each).
+	var pos int64
+	hdr := make([]byte, 8)
+	for pos+8 <= fileSize {
+		if _, err := f.ReadAt(hdr, pos); err != nil {
 			break
 		}
-		if string(data[pos+4:pos+8]) == "moof" {
-			moofOffset := uint64(pos)
-			trackID, decodeTime, err := extractMoofInfo(data[pos+8 : pos+size])
-			if err == nil {
+		size := int64(binary.BigEndian.Uint32(hdr[0:4]))
+		boxType := string(hdr[4:8])
+		if size < 8 || pos+size > fileSize {
+			break
+		}
+
+		if boxType == "mfra" {
+			return nil // already indexed
+		}
+
+		if boxType == "moof" {
+			moofData := make([]byte, size-8)
+			if _, err := f.ReadAt(moofData, pos+8); err != nil {
+				break
+			}
+			trackID, decodeTime, tfdtPatches := scanMoofForIndex(moofData, pos)
+			if trackID != 0 {
 				trackEntries[trackID] = append(trackEntries[trackID], tfraEntry{
 					time:   decodeTime,
-					offset: moofOffset,
+					offset: uint64(pos),
 				})
 			}
+			patches = append(patches, tfdtPatches...)
 		}
 		pos += size
 	}
 
 	if len(trackEntries) == 0 {
-		return nil // no fragments - not an fMP4 we can index
+		return nil
 	}
 
-	// Compute the per-track minimum baseMediaDecodeTime.  Live LL-HLS streams
-	// carry absolute stream-uptime timestamps (e.g. 44 minutes worth of ticks),
-	// which makes VLC display the recording as starting at "44:00" instead of
-	// "0:00".  Subtracting the per-track minimum from every tfdt box fixes
-	// this without affecting relative timing or AV sync.
+	// Compute per-track minimum baseMediaDecodeTime.
 	minTimes := map[uint32]uint64{}
 	for id, entries := range trackEntries {
 		min := entries[0].time
@@ -413,46 +431,135 @@ func BuildSeekIndex(path string) error {
 		minTimes[id] = min
 	}
 
-	needsNorm := false
-	for _, t := range minTimes {
-		if t > 0 {
-			needsNorm = true
-			break
+	// Pass 2: patch tfdt values in-place using pwrite (no full-file rewrite).
+	for _, p := range patches {
+		minT := minTimes[p.trackID]
+		if minT == 0 {
+			continue
+		}
+		if p.version == 1 {
+			var buf [8]byte
+			if _, err := f.ReadAt(buf[:], p.fileOffset); err != nil {
+				continue
+			}
+			cur := binary.BigEndian.Uint64(buf[:])
+			if cur >= minT {
+				binary.BigEndian.PutUint64(buf[:], cur-minT)
+				f.WriteAt(buf[:], p.fileOffset)
+			}
+		} else {
+			var buf [4]byte
+			if _, err := f.ReadAt(buf[:], p.fileOffset); err != nil {
+				continue
+			}
+			cur := uint64(binary.BigEndian.Uint32(buf[:]))
+			if cur >= minT {
+				binary.BigEndian.PutUint32(buf[:], uint32(cur-minT))
+				f.WriteAt(buf[:], p.fileOffset)
+			}
 		}
 	}
 
-	if needsNorm {
-		// Rewrite tfdt values in-place.  parseMP4Boxes returns slices (not
-		// copies), so modifications propagate directly back into data.
-		normaliseTfdt(data, minTimes)
-
-		// Adjust the collected entry times to match the rewritten values.
-		for id := range trackEntries {
-			minT := minTimes[id]
-			for i := range trackEntries[id] {
+	// Adjust collected entry times to match rewritten values.
+	for id := range trackEntries {
+		minT := minTimes[id]
+		for i := range trackEntries[id] {
+			if trackEntries[id][i].time >= minT {
 				trackEntries[id][i].time -= minT
 			}
 		}
-
-		// Write the normalised payload back to the beginning of the file.
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return fmt.Errorf("seek to start for normalise: %w", err)
-		}
-		if _, err := f.Write(data); err != nil {
-			return fmt.Errorf("write normalised data: %w", err)
-		}
-		// File pointer is now at len(data) — the right place to append mfra.
-	} else {
-		if _, err := f.Seek(0, io.SeekEnd); err != nil {
-			return fmt.Errorf("seek to end: %w", err)
-		}
 	}
 
+	// Append mfra box at end of file.
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seek to end: %w", err)
+	}
 	mfraBox := buildMFRABox(trackEntries)
 	if _, err := f.Write(mfraBox); err != nil {
 		return fmt.Errorf("write mfra: %w", err)
 	}
 	return nil
+}
+
+// scanMoofForIndex parses moof content (without the 8-byte box header) and
+// returns the first track's ID and decode time, plus patch records for every
+// tfdt found. moofFileOffset is the absolute file offset of the moof box.
+func scanMoofForIndex(moofContent []byte, moofFileOffset int64) (uint32, uint64, []tfdtPatch) {
+	var firstTrackID uint32
+	var firstDecodeTime uint64
+	var patches []tfdtPatch
+
+	// moofContent starts at moofFileOffset+8 in the file.
+	baseOffset := moofFileOffset + 8
+
+	inner := 0
+	for inner+8 <= len(moofContent) {
+		innerSize := int(binary.BigEndian.Uint32(moofContent[inner:]))
+		if innerSize < 8 || inner+innerSize > len(moofContent) {
+			break
+		}
+		if string(moofContent[inner+4:inner+8]) == "traf" {
+			trafContent := moofContent[inner+8 : inner+innerSize]
+			trafFileOffset := baseOffset + int64(inner) + 8
+			trackID, decodeTime, patch := scanTrafForIndex(trafContent, trafFileOffset)
+			if trackID != 0 {
+				if firstTrackID == 0 {
+					firstTrackID = trackID
+					firstDecodeTime = decodeTime
+				}
+				if patch != nil {
+					patches = append(patches, *patch)
+				}
+			}
+		}
+		inner += innerSize
+	}
+	return firstTrackID, firstDecodeTime, patches
+}
+
+// scanTrafForIndex reads tfhd (track_id) and tfdt (decode time + file offset)
+// from a single traf box's content. Returns a tfdtPatch if a tfdt was found.
+func scanTrafForIndex(trafContent []byte, trafFileOffset int64) (uint32, uint64, *tfdtPatch) {
+	var trackID uint32
+	var decodeTime uint64
+	var patch *tfdtPatch
+
+	pos := 0
+	for pos+8 <= len(trafContent) {
+		size := int(binary.BigEndian.Uint32(trafContent[pos:]))
+		if size < 8 || pos+size > len(trafContent) {
+			break
+		}
+		boxType := string(trafContent[pos+4 : pos+8])
+		switch boxType {
+		case "tfhd":
+			if pos+16 <= len(trafContent) {
+				trackID = binary.BigEndian.Uint32(trafContent[pos+12:])
+			}
+		case "tfdt":
+			if pos+9 <= len(trafContent) {
+				version := trafContent[pos+8]
+				if version == 1 && pos+20 <= len(trafContent) {
+					decodeTime = binary.BigEndian.Uint64(trafContent[pos+12:])
+					patch = &tfdtPatch{
+						fileOffset: trafFileOffset + int64(pos) + 12,
+						version:    1,
+					}
+				} else if version == 0 && pos+16 <= len(trafContent) {
+					decodeTime = uint64(binary.BigEndian.Uint32(trafContent[pos+12:]))
+					patch = &tfdtPatch{
+						fileOffset: trafFileOffset + int64(pos) + 12,
+						version:    0,
+					}
+				}
+			}
+		}
+		pos += size
+	}
+	if patch != nil {
+		patch.trackID = trackID
+	}
+	return trackID, decodeTime, patch
 }
 
 // normaliseTfdt subtracts the per-track minimum baseMediaDecodeTime from
