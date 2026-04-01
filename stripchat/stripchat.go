@@ -84,12 +84,28 @@ func (s *Stripchat) FetchStream(ctx context.Context, req *internal.Req, username
 	}
 
 	u := resp.User.User
+	info := &site.StreamInfo{
+		RoomTitle:        resp.Cam.Topic,
+		Gender:           mapGender(u.BroadcastGender),
+		NumViewers:       0,
+		SummaryCardImage: u.PreviewUrlThumbBig,
+		CDNReferer:       "https://stripchat.com/",
+		MouflonPDKey:     "auto",
+	}
+
+	if u.SnapshotTimestamp > 0 && resp.Cam.StreamName != "" {
+		info.LiveThumbURL = fmt.Sprintf(
+			"https://img.doppiocdn.net/thumbs/%d/%s",
+			u.SnapshotTimestamp, resp.Cam.StreamName,
+		)
+	}
+
 	// Offline if user is not online or not in public status.
 	if !u.IsOnline || u.Status != "public" {
-		return nil, nil
+		return info, internal.ErrChannelOffline
 	}
 	if !resp.Cam.IsCamActive {
-		return nil, nil
+		return info, internal.ErrChannelOffline
 	}
 
 	streamName := resp.Cam.StreamName
@@ -112,27 +128,11 @@ func (s *Stripchat) FetchStream(ctx context.Context, req *internal.Req, username
 
 	// Build a live-updating thumbnail URL from snapshotTimestamp + streamName.
 	// Pattern: https://img.doppiocdn.net/thumbs/{snapshotTimestamp}/{streamName}
-	var liveThumbURL string
-	if u.SnapshotTimestamp > 0 && streamName != "" {
-		liveThumbURL = fmt.Sprintf(
-			"https://img.doppiocdn.net/thumbs/%d/%s",
-			u.SnapshotTimestamp, streamName,
-		)
-	}
-
 	// MouflonPDKey is resolved later in FetchPlaylist once we have the pkey
 	// from the master playlist's #EXT-X-MOUFLON:PSCH:v2:{pkey} line.
 	// Pass "auto" to signal that FetchPlaylist should resolve it.
-	return &site.StreamInfo{
-		HLSURL:           hlsURL,
-		RoomTitle:        resp.Cam.Topic,
-		Gender:           mapGender(u.BroadcastGender),
-		NumViewers:       0,
-		SummaryCardImage: u.PreviewUrlThumbBig,
-		LiveThumbURL:     liveThumbURL,
-		CDNReferer:       "https://stripchat.com/",
-		MouflonPDKey:     "auto",
-	}, nil
+	info.HLSURL = hlsURL
+	return info, nil
 }
 
 // FetchLastBroadcast implements site.Site. Stripchat has no equivalent endpoint.
