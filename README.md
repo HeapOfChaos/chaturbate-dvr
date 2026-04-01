@@ -1,18 +1,29 @@
 # GoondVR
 
-A tool to record **multiple** streams from Chaturbate, Stripchat, and more. Supports macOS, Windows, Linux, and Docker. Favicon from [Twemoji](https://github.com/twitter/twemoji).
+A self-hosted web UI and CLI for recording public livestreams from Chaturbate and Stripchat. Supports macOS, Windows, Linux, and Docker. Favicon from [Twemoji](https://github.com/twitter/twemoji).
 
-![Image](https://github.com/user-attachments/assets/d71f0aaa-e821-4371-9f48-658a137b42b6)
+Features added in this version include:
 
-![Image](https://github.com/user-attachments/assets/43ab0a07-0ece-40ba-9a0f-045ca0316638)
+- Updated web UI
+- Live stream thumbnails for streaming channels and previews for offline channels
+- Stripchat support
+- Discord webhook and `ntfy` notifications
 
-&nbsp;
+Example dashboard and settings views from the current web UI.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+![Dashboard Grid](docs/screenshots/dashboard-grid.png)
+
+![Dashboard Compact](docs/screenshots/dashboard-compact.png)
+
+![Add Channel](docs/screenshots/addchannel.png)
+
+![Settings](docs/screenshots/settings.png)
 
 # Getting Started
 
 Go to the [📦 Releases page](https://github.com/HeapOfChaos/goondvr/releases) and download the appropriate binary. (e.g., `windows_amd64_goondvr.exe`)
-
-&nbsp;
 
 ## 🌐 Launching the Web UI
 
@@ -32,8 +43,6 @@ $ ./linux_amd64_goondvr
 
 Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
 
-&nbsp;
-
 ## 💻 Using as a CLI Tool
 
 ```bash
@@ -52,11 +61,11 @@ $ ./linux_amd64_goondvr -u CHANNEL_USERNAME
 
 This starts recording immediately. The Web UI will be disabled.
 
-&nbsp;
-
 ## 🐳 Running with Docker
 
 Pre-built image from [GitHub Container Registry](https://github.com/HeapOfChaos/goondvr/pkgs/container/goondvr):
+
+Persist `./videos` for recordings and `./conf` for saved channels and settings.
 
 ```bash
 # Run the container and save videos to ./videos
@@ -93,8 +102,6 @@ $ docker compose up -d
 
 Then visit [`http://localhost:8080`](http://localhost:8080) in your browser.
 
-&nbsp;
-
 # 🧾 Command-Line Options
 
 Available options:
@@ -112,6 +119,7 @@ Available options:
 --interval value            Check if the channel is online every N minutes (default: 1)
 --cookies value             Cookies to use in the request (format: key=value; key2=value2)
 --user-agent value          Custom User-Agent for the request
+--stripchat-pdkey value     Manually specify Stripchat pdkey if keys have rotated
 --domain value              Chaturbate domain to use (default: "https://chaturbate.com/")
 --debug                     Dump full HTML to a temp file when stream detection fails, for diagnosing Cloudflare blocks
 --help, -h                  show help
@@ -137,8 +145,6 @@ $ ./goondvr -u yamiodymel \
 
 _Note: In Web UI mode, these flags serve as default values for new channels._
 
-&nbsp;
-
 # 🍪 Cookies & User-Agent
 
 You can set Cookies and User-Agent via the Web UI or command-line arguments.
@@ -146,8 +152,6 @@ You can set Cookies and User-Agent via the Web UI or command-line arguments.
 ![localhost_8080_ (4)](https://github.com/user-attachments/assets/cbd859a9-4255-404b-b6bf-fa89342f7258)
 
 _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=value2`._
-
-&nbsp;
 
 ## ☁️ Bypass Cloudflare
 
@@ -175,8 +179,6 @@ _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=val
         -user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
     ```
 
-&nbsp;
-
 ## 🕵️ Record Private Shows
 
 1. Login [Chaturbate](https://chaturbate.com) in your browser.
@@ -189,15 +191,11 @@ _Note: Use semicolons to separate multiple cookies, e.g., `key1=value1; key2=val
     $ ./goondvr -u yamiodymel -cookies "sessionid=PASTE_YOUR_SESSIONID_HERE"
     ```
 
-&nbsp;
-
 # 📄 Filename Pattern
 
 The format is based on [Go Template Syntax](https://pkg.go.dev/text/template), available variables are:
 
 `{{.Username}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}`, `{{.Hour}}`, `{{.Minute}}`, `{{.Second}}`, `{{.Sequence}}`
-
-&nbsp;
 
 By default, it hides the sequence if it's zero.
 
@@ -224,8 +222,6 @@ Pattern: video/{{.Username}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}-{{.Minute}}
 
 _Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams are saved as `.mp4` with muxed video and audio._
 
-&nbsp;
-
 # 🤔 Frequently Asked Questions
 
 **Q: The program closes immediately on Windows.**
@@ -245,13 +241,9 @@ _Note: Legacy HLS streams are saved as `.ts`. LL-HLS streams are saved as `.mp4`
 > $ net start winnat
 > ```
 
-&nbsp;
-
 **Q: Error `A connection attempt failed... host has failed to respond`**
 
 > Likely a network issue (e.g., VPN, firewall, or blocked by Chaturbate). This cannot be fixed by the program.
-
-&nbsp;
 
 **Q: Error `Channel was blocked by Cloudflare`**
 
