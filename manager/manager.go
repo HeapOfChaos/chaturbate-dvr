@@ -100,10 +100,10 @@ func SaveSettings() error {
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
-	if err := os.MkdirAll("./conf", 0777); err != nil {
+	if err := os.MkdirAll("./conf", 0700); err != nil {
 		return fmt.Errorf("mkdir conf: %w", err)
 	}
-	if err := os.WriteFile(settingsFile, b, 0777); err != nil {
+	if err := os.WriteFile(settingsFile, b, 0600); err != nil {
 		return fmt.Errorf("write settings: %w", err)
 	}
 	return nil
@@ -174,10 +174,10 @@ func (m *Manager) SaveConfig() error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := os.MkdirAll("./conf", 0777); err != nil {
+	if err := os.MkdirAll("./conf", 0700); err != nil {
 		return fmt.Errorf("mkdir all conf: %w", err)
 	}
-	if err := os.WriteFile("./conf/channels.json", b, 0777); err != nil {
+	if err := os.WriteFile("./conf/channels.json", b, 0600); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 	return nil

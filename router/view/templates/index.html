@@ -688,6 +688,41 @@
                 }
             })
 
+            document.body.addEventListener("htmx:beforeRequest", function (e) {
+                const btn = e.detail && e.detail.elt && e.detail.elt.matches('button[data-pending-label]')
+                    ? e.detail.elt
+                    : null;
+                if (!btn) return;
+                if (!btn.dataset.originalLabel) {
+                    btn.dataset.originalLabel = btn.textContent.trim();
+                }
+                btn.textContent = btn.dataset.pendingLabel;
+            });
+
+            document.body.addEventListener("htmx:afterRequest", function (e) {
+                const btn = e.detail && e.detail.elt && e.detail.elt.matches('button[data-pending-label]')
+                    ? e.detail.elt
+                    : null;
+                if (!btn) return;
+                if (e.detail.failed && btn.dataset.originalLabel) {
+                    btn.textContent = btn.dataset.originalLabel;
+                    btn.disabled = false;
+                }
+            });
+
+            function handleDeleteSubmit(form, message) {
+                if (!confirm(message)) return false;
+                const btn = form.querySelector('button[data-pending-label]');
+                if (btn) {
+                    if (!btn.dataset.originalLabel) {
+                        btn.dataset.originalLabel = btn.textContent.trim();
+                    }
+                    btn.textContent = btn.dataset.pendingLabel;
+                    btn.disabled = true;
+                }
+                return true;
+            }
+
             // Initial setup on page load
             document.addEventListener("DOMContentLoaded", function() {
                 const savedView = localStorage.getItem('dvr-view') || 'expanded';

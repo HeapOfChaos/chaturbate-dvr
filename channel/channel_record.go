@@ -28,7 +28,9 @@ func resolveSite(siteName string) site.Site {
 }
 
 // Monitor starts monitoring the channel for live streams and records them.
-func (ch *Channel) Monitor() {
+func (ch *Channel) Monitor(runID uint64) {
+	defer ch.finishMonitor()
+
 	s := resolveSite(ch.Config.Site)
 	req := internal.NewReq()
 	ch.Info("starting to record `%s`", ch.Config.Username)
@@ -57,9 +59,9 @@ func (ch *Channel) Monitor() {
 			break
 		}
 
-		pipeline := func() error {
-			return ch.RecordStream(ctx, s, req)
-		}
+			pipeline := func() error {
+				return ch.RecordStream(ctx, runID, s, req)
+			}
 		// isExpectedOffline returns true for errors where the full interval delay is appropriate.
 		// Transient errors (502, decode errors, network hiccups) should retry quickly.
 		isExpectedOffline := func(err error) bool {
@@ -145,12 +147,16 @@ func (ch *Channel) Monitor() {
 // Update sends an update signal to the channel's update channel.
 // This notifies the Server-sent Event to boradcast the channel information to the client.
 func (ch *Channel) Update() {
-	ch.UpdateCh <- true
+	select {
+	case <-ch.done:
+		return
+	case ch.UpdateCh <- true:
+	}
 }
 
 // RecordStream records the stream of the channel using the provided site and HTTP client.
 // It retrieves the stream information and starts watching the segments.
-func (ch *Channel) RecordStream(ctx context.Context, s site.Site, req *internal.Req) error {
+func (ch *Channel) RecordStream(ctx context.Context, runID uint64, s site.Site, req *internal.Req) error {
 	streamInfo, err := s.FetchStream(ctx, req, ch.Config.Username)
 	if err != nil {
 		return fmt.Errorf("get stream: %w", err)
@@ -233,32 +239,69 @@ func (ch *Channel) RecordStream(ctx context.Context, s site.Site, req *internal.
 	}
 	ch.Info("stream type: %s, resolution %dp (target: %dp), framerate %dfps (target: %dfps)", streamType, playlist.Resolution, ch.Config.Resolution, playlist.Framerate, ch.Config.Framerate)
 
-	return playlist.WatchSegments(ctx, ch.HandleSegment)
+	return playlist.WatchSegments(ctx, func(b []byte, duration float64) error {
+		return ch.handleSegmentForMonitor(runID, b, duration)
+	})
 }
 
-// HandleSegment processes and writes segment data to a file.
-func (ch *Channel) HandleSegment(b []byte, duration float64) error {
-	if ch.Config.IsPaused {
+// handleSegmentForMonitor processes and writes segment data for a specific
+// monitor run, ignoring stale late-arriving segments from older runs.
+func (ch *Channel) handleSegmentForMonitor(runID uint64, b []byte, duration float64) error {
+	ch.fileMu.Lock()
+	ch.monitorMu.Lock()
+	isPaused := ch.Config.IsPaused
+	isCurrentRun := ch.monitorRunID == runID
+	ch.monitorMu.Unlock()
+
+	if isPaused || !isCurrentRun {
+		ch.fileMu.Unlock()
 		return retry.Unrecoverable(internal.ErrPaused)
+	}
+
+	if ch.File == nil {
+		ch.fileMu.Unlock()
+		return fmt.Errorf("write file: no active file")
 	}
 
 	n, err := ch.File.Write(b)
 	if err != nil {
+		ch.fileMu.Unlock()
 		return fmt.Errorf("write file: %w", err)
 	}
 
 	ch.Filesize += n
 	ch.Duration += duration
-	ch.Verbose("duration: %s, filesize: %s", internal.FormatDuration(ch.Duration), internal.FormatFilesize(ch.Filesize))
+	formattedDuration := internal.FormatDuration(ch.Duration)
+	formattedFilesize := internal.FormatFilesize(ch.Filesize)
+	shouldSwitch := ch.shouldSwitchFileLocked()
+
+	var newFilename string
+	if shouldSwitch {
+		if err := ch.cleanupLocked(); err != nil {
+			ch.fileMu.Unlock()
+			return fmt.Errorf("next file: %w", err)
+		}
+		filename, err := ch.generateFilenameLocked()
+		if err != nil {
+			ch.fileMu.Unlock()
+			return err
+		}
+		if err := ch.createNewFileLocked(filename, ch.FileExt); err != nil {
+			ch.fileMu.Unlock()
+			return fmt.Errorf("next file: %w", err)
+		}
+		ch.Sequence++
+		newFilename = ch.File.Name()
+	}
+	ch.fileMu.Unlock()
+
+	ch.Verbose("duration: %s, filesize: %s", formattedDuration, formattedFilesize)
 
 	// Send an SSE update to update the view
 	ch.Update()
 
-	if ch.ShouldSwitchFile() {
-		if err := ch.NextFile(ch.FileExt); err != nil {
-			return fmt.Errorf("next file: %w", err)
-		}
-		ch.Info("max filesize or duration exceeded, new file created: %s", ch.File.Name())
+	if newFilename != "" {
+		ch.Info("max filesize or duration exceeded, new file created: %s", newFilename)
 		return nil
 	}
 	return nil

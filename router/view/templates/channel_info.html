@@ -98,21 +98,21 @@
         <div class="column">
             {{ if .IsPaused }}
             <form>
-                <button class="ts-button is-start-icon is-fluid" hx-post="/resume_channel/{{ .Username }}" hx-swap="none">
+                <button class="ts-button is-start-icon is-fluid" hx-post="/resume_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Resuming...">
                     <span class="ts-icon is-play-icon"></span>Resume
                 </button>
             </form>
             {{ else }}
             <form>
-                <button type="submit" class="ts-button is-start-icon is-secondary is-fluid" hx-post="/pause_channel/{{ .Username }}" hx-swap="none">
+                <button type="submit" class="ts-button is-start-icon is-secondary is-fluid" hx-post="/pause_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Pausing...">
                     <span class="ts-icon is-pause-icon"></span>Pause
                 </button>
             </form>
             {{ end }}
         </div>
         <div class="column">
-            <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return confirm('Are you sure you want to delete `{{ .Username }}` channel?')">
-                <button class="ts-button is-start-icon is-outlined is-negative is-fluid">
+            <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return handleDeleteSubmit(this, 'Are you sure you want to delete `{{ .Username }}` channel?')">
+                <button class="ts-button is-start-icon is-outlined is-negative is-fluid" data-pending-label="Deleting...">
                     <span class="ts-icon is-trash-icon"></span>Delete
                 </button>
             </form>
@@ -162,14 +162,14 @@
         <div class="ts-grid is-2-columns has-top-spaced">
             <div class="column">
                 {{ if .IsPaused }}
-                <form><button class="ts-button is-small is-start-icon is-fluid" hx-post="/resume_channel/{{ .Username }}" hx-swap="none"><span class="ts-icon is-play-icon"></span>Resume</button></form>
+                <form><button class="ts-button is-small is-start-icon is-fluid" hx-post="/resume_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Resuming..."><span class="ts-icon is-play-icon"></span>Resume</button></form>
                 {{ else }}
-                <form><button class="ts-button is-small is-start-icon is-secondary is-fluid" hx-post="/pause_channel/{{ .Username }}" hx-swap="none"><span class="ts-icon is-pause-icon"></span>Pause</button></form>
+                <form><button class="ts-button is-small is-start-icon is-secondary is-fluid" hx-post="/pause_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Pausing..."><span class="ts-icon is-pause-icon"></span>Pause</button></form>
                 {{ end }}
             </div>
             <div class="column">
-                <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return confirm('Are you sure you want to delete `{{ .Username }}` channel?')">
-                    <button class="ts-button is-small is-start-icon is-outlined is-negative is-fluid"><span class="ts-icon is-trash-icon"></span>Delete</button>
+                <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return handleDeleteSubmit(this, 'Are you sure you want to delete `{{ .Username }}` channel?')">
+                    <button class="ts-button is-small is-start-icon is-outlined is-negative is-fluid" data-pending-label="Deleting..."><span class="ts-icon is-trash-icon"></span>Delete</button>
                 </form>
             </div>
         </div>
@@ -199,12 +199,12 @@
     {{ if .Filesize }}<div class="ts-text is-small is-description collapsed-stat">{{ .Filesize }}</div>{{ end }}
     <div class="collapsed-actions">
         {{ if .IsPaused }}
-        <form><button class="ts-button is-small is-start-icon" hx-post="/resume_channel/{{ .Username }}" hx-swap="none"><span class="ts-icon is-play-icon"></span>Resume</button></form>
+        <form><button class="ts-button is-small is-start-icon" hx-post="/resume_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Resuming..."><span class="ts-icon is-play-icon"></span>Resume</button></form>
         {{ else }}
-        <form><button class="ts-button is-small is-start-icon is-secondary" hx-post="/pause_channel/{{ .Username }}" hx-swap="none"><span class="ts-icon is-pause-icon"></span>Pause</button></form>
+        <form><button class="ts-button is-small is-start-icon is-secondary" hx-post="/pause_channel/{{ .Username }}" hx-swap="none" hx-disabled-elt="this" data-pending-label="Pausing..."><span class="ts-icon is-pause-icon"></span>Pause</button></form>
         {{ end }}
-        <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return confirm('Are you sure you want to delete `{{ .Username }}` channel?')">
-            <button class="ts-button is-small is-icon is-outlined is-negative"><span class="ts-icon is-trash-icon"></span></button>
+        <form action="/stop_channel/{{ .Username }}" method="POST" onsubmit="return handleDeleteSubmit(this, 'Are you sure you want to delete `{{ .Username }}` channel?')">
+            <button class="ts-button is-small is-icon is-outlined is-negative" data-pending-label="Deleting..."><span class="ts-icon is-trash-icon"></span></button>
         </form>
     </div>
 </div>

@@ -30,14 +30,17 @@ type Pattern struct {
 // NextFile prepares the next file to be created, by cleaning up the last file and generating a new one.
 // ext is the file extension to use (e.g. ".ts" or ".mp4").
 func (ch *Channel) NextFile(ext string) error {
-	if err := ch.Cleanup(); err != nil {
+	ch.fileMu.Lock()
+	defer ch.fileMu.Unlock()
+
+	if err := ch.cleanupLocked(); err != nil {
 		return err
 	}
-	filename, err := ch.GenerateFilename()
+	filename, err := ch.generateFilenameLocked()
 	if err != nil {
 		return err
 	}
-	if err := ch.CreateNewFile(filename, ext); err != nil {
+	if err := ch.createNewFileLocked(filename, ext); err != nil {
 		return err
 	}
 
@@ -48,6 +51,13 @@ func (ch *Channel) NextFile(ext string) error {
 
 // Cleanup cleans the file and resets it, called when the stream errors out or before next file was created.
 func (ch *Channel) Cleanup() error {
+	ch.fileMu.Lock()
+	defer ch.fileMu.Unlock()
+
+	return ch.cleanupLocked()
+}
+
+func (ch *Channel) cleanupLocked() error {
 	if ch.File == nil {
 		return nil
 	}
@@ -93,6 +103,13 @@ func (ch *Channel) Cleanup() error {
 
 // GenerateFilename creates a filename based on the configured pattern and the current timestamp
 func (ch *Channel) GenerateFilename() (string, error) {
+	ch.fileMu.RLock()
+	defer ch.fileMu.RUnlock()
+
+	return ch.generateFilenameLocked()
+}
+
+func (ch *Channel) generateFilenameLocked() (string, error) {
 	var buf bytes.Buffer
 
 	// Parse the filename pattern defined in the channel's config
@@ -122,14 +139,21 @@ func (ch *Channel) GenerateFilename() (string, error) {
 
 // CreateNewFile creates a new file for the channel using the given filename and extension.
 func (ch *Channel) CreateNewFile(filename, ext string) error {
+	ch.fileMu.Lock()
+	defer ch.fileMu.Unlock()
+
+	return ch.createNewFileLocked(filename, ext)
+}
+
+func (ch *Channel) createNewFileLocked(filename, ext string) error {
 
 	// Ensure the directory exists before creating the file
-	if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return fmt.Errorf("mkdir all: %w", err)
 	}
 
 	// Open the file in append mode, create it if it doesn't exist
-	file, err := os.OpenFile(filename+ext, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
+	file, err := os.OpenFile(filename+ext, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("cannot open file: %s: %w", filename, err)
 	}
@@ -170,11 +194,20 @@ func (ch *Channel) ScanTotalDiskUsage() {
 		}
 		return nil
 	})
+	ch.fileMu.Lock()
 	ch.TotalDiskUsageBytes = total
+	ch.fileMu.Unlock()
 }
 
 // ShouldSwitchFile determines whether a new file should be created.
 func (ch *Channel) ShouldSwitchFile() bool {
+	ch.fileMu.RLock()
+	defer ch.fileMu.RUnlock()
+
+	return ch.shouldSwitchFileLocked()
+}
+
+func (ch *Channel) shouldSwitchFileLocked() bool {
 	maxFilesizeBytes := ch.Config.MaxFilesize * 1024 * 1024
 	maxDurationSeconds := ch.Config.MaxDuration * 60
 

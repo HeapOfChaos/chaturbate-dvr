@@ -18,6 +18,7 @@ type Channel struct {
 	CancelFunc context.CancelFunc
 	LogCh      chan string
 	UpdateCh   chan bool
+	done       chan struct{}
 
 	IsOnline            bool
 	StreamedAt          int64
@@ -37,6 +38,14 @@ type Channel struct {
 	logsMu sync.RWMutex
 	Logs   []string
 
+	fileMu                  sync.RWMutex
+	monitorMu               sync.Mutex
+	monitorRunning          bool
+	monitorRestartRequested bool
+	monitorRunID            uint64
+	monitorDone             chan struct{}
+	doneOnce                sync.Once
+
 	File   *os.File
 	Config *entity.ChannelConfig
 }
@@ -46,6 +55,7 @@ func New(conf *entity.ChannelConfig) *Channel {
 	ch := &Channel{
 		LogCh:            make(chan string),
 		UpdateCh:         make(chan bool),
+		done:             make(chan struct{}),
 		Config:           conf,
 		CancelFunc:       func() {},
 		RoomTitle:        conf.RoomTitle,
@@ -63,6 +73,8 @@ func New(conf *entity.ChannelConfig) *Channel {
 func (ch *Channel) Publisher() {
 	for {
 		select {
+		case <-ch.done:
+			return
 		case v := <-ch.LogCh:
 			// Append the log message to ch.Logs and keep only the last 100 rows
 			ch.logsMu.Lock()
@@ -91,7 +103,7 @@ func (ch *Channel) WithCancel(ctx context.Context) (context.Context, context.Can
 // Info logs an informational message to both the browser log and stdout.
 func (ch *Channel) Info(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
-	ch.LogCh <- fmt.Sprintf("%s [INFO] %s", time.Now().Format("15:04"), msg)
+	ch.sendLog(fmt.Sprintf("%s [INFO] %s", time.Now().Format("15:04"), msg))
 	log.Printf(" INFO [%s] %s", ch.Config.Username, msg)
 }
 
@@ -99,7 +111,7 @@ func (ch *Channel) Info(format string, a ...any) {
 // Use this for high-frequency events (e.g. per-segment updates) that would clutter the console.
 func (ch *Channel) Verbose(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
-	ch.LogCh <- fmt.Sprintf("%s [INFO] %s", time.Now().Format("15:04"), msg)
+	ch.sendLog(fmt.Sprintf("%s [INFO] %s", time.Now().Format("15:04"), msg))
 	if server.Config.Debug {
 		log.Printf(" INFO [%s] %s", ch.Config.Username, msg)
 	}
@@ -108,16 +120,21 @@ func (ch *Channel) Verbose(format string, a ...any) {
 // Error logs an error message to both the browser log and stdout.
 func (ch *Channel) Error(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
-	ch.LogCh <- fmt.Sprintf("%s [ERROR] %s", time.Now().Format("15:04"), msg)
+	ch.sendLog(fmt.Sprintf("%s [ERROR] %s", time.Now().Format("15:04"), msg))
 	log.Printf("ERROR [%s] %s", ch.Config.Username, msg)
 }
 
 // ExportInfo exports the channel information as a ChannelInfo struct.
 func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 	var filename string
+	ch.fileMu.RLock()
 	if ch.File != nil {
 		filename = ch.File.Name()
 	}
+	duration := ch.Duration
+	filesize := ch.Filesize
+	totalDiskUsageBytes := ch.TotalDiskUsageBytes
+	ch.fileMu.RUnlock()
 	var streamedAt string
 	if ch.StreamedAt != 0 {
 		streamedAt = time.Unix(ch.StreamedAt, 0).Format("2006-01-02 15:04 AM")
@@ -145,9 +162,9 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 		MaxFilesize:      internal.FormatFilesize(ch.Config.MaxFilesize * 1024 * 1024), // MaxFilesize from config is in MB
 		StreamedAt:       streamedAt,
 		CreatedAt:        ch.Config.CreatedAt,
-		Duration:         internal.FormatDuration(ch.Duration),
-		Filesize:         internal.FormatFilesize(ch.Filesize),
-		TotalDiskUsage:   internal.FormatFilesize(int(ch.TotalDiskUsageBytes)),
+		Duration:         internal.FormatDuration(duration),
+		Filesize:         internal.FormatFilesize(filesize),
+		TotalDiskUsage:   internal.FormatFilesize(int(totalDiskUsageBytes)),
 		Filename:         filename,
 		Logs:             logs,
 		GlobalConfig:     server.Config,
@@ -166,9 +183,12 @@ func (ch *Channel) ExportInfo() *entity.ChannelInfo {
 func (ch *Channel) Pause() {
 	// Stop the monitoring loop, this also updates `ch.IsOnline` to false
 	// `context.Canceled` → `ch.Monitor()` → `onRetry` → `ch.UpdateOnlineStatus(false)`.
+	ch.monitorMu.Lock()
+	ch.monitorRestartRequested = false
+	ch.Config.IsPaused = true
+	ch.monitorMu.Unlock()
 	ch.CancelFunc()
 
-	ch.Config.IsPaused = true
 	ch.Update()
 	ch.Info("channel paused")
 }
@@ -176,9 +196,15 @@ func (ch *Channel) Pause() {
 // Stop stops the channel and cancels the context.
 func (ch *Channel) Stop() {
 	// Stop the monitoring loop
+	ch.monitorMu.Lock()
+	ch.monitorRestartRequested = false
+	ch.Config.IsPaused = true
+	ch.monitorMu.Unlock()
 	ch.CancelFunc()
+	ch.waitForMonitorStop()
 
 	ch.Info("channel stopped")
+	ch.stopPublisher()
 }
 
 // Resume resumes the channel monitoring.
@@ -186,13 +212,16 @@ func (ch *Channel) Stop() {
 // `startSeq` is used to prevent all channels from starting at the same time, preventing TooManyRequests errors.
 // It's only be used when program starting and trying to resume all channels at once.
 func (ch *Channel) Resume(startSeq int) {
-	ch.Config.IsPaused = false
-
-	ch.Update()
-	ch.Info("channel resumed")
-
-	<-time.After(time.Duration(startSeq) * time.Second)
-	go ch.Monitor()
+	go func() {
+		<-time.After(time.Duration(startSeq) * time.Second)
+		runID, ok := ch.requestMonitorStart()
+		if !ok {
+			return
+		}
+		ch.Update()
+		ch.Info("channel resumed")
+		ch.Monitor(runID)
+	}()
 }
 
 // UpdateOnlineStatus updates the online status of the channel.
@@ -202,4 +231,86 @@ func (ch *Channel) UpdateOnlineStatus(isOnline bool) {
 		ch.NumViewers = 0
 	}
 	ch.Update()
+}
+
+// requestMonitorStart starts a monitor immediately when possible, or records
+// a pending restart if a previous monitor is still shutting down.
+func (ch *Channel) requestMonitorStart() (uint64, bool) {
+	ch.monitorMu.Lock()
+	defer ch.monitorMu.Unlock()
+
+	if ch.monitorRunning {
+		if ch.Config.IsPaused {
+			ch.monitorRestartRequested = true
+		}
+		return 0, false
+	}
+
+	return ch.startMonitorLocked(), true
+}
+
+// finishMonitor clears the running flag when a monitor loop exits.
+func (ch *Channel) finishMonitor() {
+	ch.monitorMu.Lock()
+	done := ch.monitorDone
+	shouldRestart := ch.monitorRestartRequested
+	ch.monitorRunning = false
+	ch.monitorRestartRequested = false
+	var runID uint64
+	if shouldRestart {
+		runID = ch.startMonitorLocked()
+	} else {
+		ch.monitorDone = nil
+	}
+	ch.monitorMu.Unlock()
+
+	if done != nil {
+		close(done)
+	}
+
+	if shouldRestart {
+		ch.Update()
+		ch.Info("channel resumed")
+		go ch.Monitor(runID)
+	}
+}
+
+// startMonitorLocked marks a monitor as active and allocates a new run ID.
+// monitorMu must already be held by the caller.
+func (ch *Channel) startMonitorLocked() uint64 {
+	ch.Config.IsPaused = false
+	ch.monitorRunning = true
+	ch.monitorRestartRequested = false
+	ch.monitorDone = make(chan struct{})
+	ch.monitorRunID++
+	return ch.monitorRunID
+}
+
+// stopPublisher signals the publisher goroutine to exit. It is only used when
+// a channel is being permanently stopped and removed, not for pause/resume.
+func (ch *Channel) stopPublisher() {
+	ch.doneOnce.Do(func() {
+		close(ch.done)
+	})
+}
+
+// sendLog forwards a log line to the publisher unless the channel has been
+// permanently shut down.
+func (ch *Channel) sendLog(msg string) {
+	select {
+	case <-ch.done:
+		return
+	case ch.LogCh <- msg:
+	}
+}
+
+// waitForMonitorStop blocks until the current monitor run has finished cleanup.
+func (ch *Channel) waitForMonitorStop() {
+	ch.monitorMu.Lock()
+	done := ch.monitorDone
+	ch.monitorMu.Unlock()
+
+	if done != nil {
+		<-done
+	}
 }
