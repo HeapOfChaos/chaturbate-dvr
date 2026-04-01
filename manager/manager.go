@@ -356,7 +356,10 @@ func (m *Manager) GetChannelLiveThumb(username string) string {
 // and indexed for seeking.
 func (m *Manager) Shutdown() {
 	m.Channels.Range(func(key, value any) bool {
-		value.(*channel.Channel).Stop()
+		ch := value.(*channel.Channel)
+		wasPaused := ch.Config.IsPaused
+		ch.Stop()
+		ch.Config.IsPaused = wasPaused
 		return true
 	})
 	// Persist channel list so the web UI restores them on next start.
